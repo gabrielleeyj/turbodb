@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package turbodb.v1;
+
+option go_package = "github.com/gabrielleeyj/turbodb/api/v1;apiv1";
+
+// TurboQuantKVCache provides KV cache quantization as a gRPC service,
+// an alternative to the in-process CFFI path for vLLM/SGLang.
+service TurboQuantKVCache {
+  rpc Init(KVInitRequest) returns (KVInitResponse);
+  rpc QuantizeKeys(KVQuantizeRequest) returns (KVQuantizeResponse);
+  rpc QuantizeValues(KVQuantizeRequest) returns (KVQuantizeResponse);
+  rpc Dequantize(KVDequantizeRequest) returns (KVDequantizeResponse);
+  rpc Destroy(KVDestroyRequest) returns (KVDestroyResponse);
+}
+
+message KVInitRequest {
+  int32 d_head = 1;
+  int32 bit_width_key = 2;
+  int32 bit_width_value = 3;
+  int32 num_heads = 4;
+}
+
+message KVInitResponse {
+  string handle_id = 1;
+}
+
+message KVQuantizeRequest {
+  string handle_id = 1;
+  bytes tensor_data = 2;  // Raw FP16/BF16 tensor bytes.
+  int32 num_tokens = 3;
+}
+
+message KVQuantizeResponse {
+  bytes quantized_data = 1;
+  int64 original_bytes = 2;
+  int64 compressed_bytes = 3;
+}
+
+message KVDequantizeRequest {
+  string handle_id = 1;
+  bytes quantized_data = 2;
+  int32 num_tokens = 3;
+}
+
+message KVDequantizeResponse {
+  bytes tensor_data = 1;
+}
+
+message KVDestroyRequest {
+  string handle_id = 1;
+}
+
+message KVDestroyResponse {}

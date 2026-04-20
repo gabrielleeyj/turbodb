@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package turbodb.v1;
+
+option go_package = "github.com/gabrielleeyj/turbodb/api/v1;apiv1";
+
+// Metric defines the distance metric used for similarity search.
+enum Metric {
+  METRIC_UNSPECIFIED = 0;
+  METRIC_INNER_PRODUCT = 1;
+  METRIC_COSINE = 2;
+  METRIC_L2 = 3;
+}
+
+// QuantizationVariant selects the TurboQuant algorithm variant.
+enum QuantizationVariant {
+  QUANTIZATION_VARIANT_UNSPECIFIED = 0;
+  QUANTIZATION_VARIANT_MSE = 1;
+  QUANTIZATION_VARIANT_PROD = 2;
+}
+
+// CollectionConfig defines the configuration for a vector collection.
+message CollectionConfig {
+  string name = 1;
+  int32 dimension = 2;
+  int32 bit_width = 3;
+  Metric metric = 4;
+  QuantizationVariant variant = 5;
+  uint64 rotator_seed = 6;
+}
+
+// Vector represents a single vector with its ID and data.
+message Vector {
+  string id = 1;
+  repeated float values = 2;
+  map<string, string> metadata = 3;
+}
+
+// QuantizedVector represents a quantized vector in wire format.
+message QuantizedVector {
+  string id = 1;
+  bytes codes = 2;
+  float norm = 3;
+  bytes qjl_sketch = 4;  // Only for PROD variant.
+  float residual_norm = 5;  // Only for PROD variant.
+}
+
+// SearchResult represents a single search result.
+message SearchResult {
+  string id = 1;
+  float score = 2;
+  map<string, string> metadata = 3;
+}

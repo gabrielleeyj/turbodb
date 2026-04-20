@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package turbodb.v1;
+
+option go_package = "github.com/gabrielleeyj/turbodb/api/v1;apiv1";
+
+import "v1/index.proto";
+
+// TurboDBEngine is the primary gRPC service for the standalone vector engine.
+service TurboDBEngine {
+  // Collection management
+  rpc CreateCollection(CreateCollectionRequest) returns (CreateCollectionResponse);
+  rpc DropCollection(DropCollectionRequest) returns (DropCollectionResponse);
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc DescribeCollection(DescribeCollectionRequest) returns (DescribeCollectionResponse);
+
+  // Data operations
+  rpc Insert(InsertRequest) returns (InsertResponse);
+  rpc InsertBatch(stream InsertBatchRequest) returns (InsertBatchResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+  // Search
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc SearchBatch(SearchBatchRequest) returns (stream SearchBatchResponse);
+
+  // Maintenance
+  rpc Flush(FlushRequest) returns (FlushResponse);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+// --- Collection management ---
+
+message CreateCollectionRequest {
+  CollectionConfig config = 1;
+}
+
+message CreateCollectionResponse {
+  string name = 1;
+}
+
+message DropCollectionRequest {
+  string name = 1;
+}
+
+message DropCollectionResponse {}
+
+message ListCollectionsRequest {}
+
+message ListCollectionsResponse {
+  repeated CollectionConfig collections = 1;
+}
+
+message DescribeCollectionRequest {
+  string name = 1;
+}
+
+message DescribeCollectionResponse {
+  CollectionConfig config = 1;
+  CollectionStats stats = 2;
+}
+
+message CollectionStats {
+  int64 vector_count = 1;
+  int32 sealed_segment_count = 2;
+  int32 growing_segment_count = 3;
+  int64 gpu_memory_bytes = 4;
+  int64 host_memory_bytes = 5;
+  int64 disk_bytes = 6;
+}
+
+// --- Data operations ---
+
+message InsertRequest {
+  string collection = 1;
+  Vector vector = 2;
+}
+
+message InsertResponse {
+  string id = 1;
+}
+
+message InsertBatchRequest {
+  string collection = 1;
+  repeated Vector vectors = 2;
+}
+
+message InsertBatchResponse {
+  int64 inserted_count = 1;
+}
+
+message DeleteRequest {
+  string collection = 1;
+  string id = 2;
+}
+
+message DeleteResponse {}
+
+// --- Search ---
+
+message SearchRequest {
+  string collection = 1;
+  repeated float query = 2;
+  int32 top_k = 3;
+  bool rerank = 4;
+  int32 ef_search = 5;
+  bool exact = 6;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+  int64 search_time_us = 2;
+}
+
+message SearchBatchRequest {
+  string collection = 1;
+  repeated SearchRequest queries = 2;
+}
+
+message SearchBatchResponse {
+  SearchResponse response = 1;
+}
+
+// --- Maintenance ---
+
+message FlushRequest {
+  string collection = 1;
+}
+
+message FlushResponse {
+  int32 segments_sealed = 1;
+}
+
+message GetStatsRequest {
+  string collection = 1;
+}
+
+message GetStatsResponse {
+  CollectionStats stats = 1;
+}

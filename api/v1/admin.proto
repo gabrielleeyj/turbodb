@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package turbodb.v1;
+
+option go_package = "github.com/gabrielleeyj/turbodb/api/v1;apiv1";
+
+// TurboDBAdmin provides administrative and operational endpoints.
+service TurboDBAdmin {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Ready(ReadyRequest) returns (ReadyResponse);
+  rpc GPUInfo(GPUInfoRequest) returns (GPUInfoResponse);
+  rpc RotatorRegenerate(RotatorRegenerateRequest) returns (RotatorRegenerateResponse);
+  rpc CodebookUpgrade(CodebookUpgradeRequest) returns (CodebookUpgradeResponse);
+}
+
+// --- Health ---
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+  string version = 2;
+  string uptime = 3;
+}
+
+message ReadyRequest {}
+
+message ReadyResponse {
+  bool ready = 1;
+  string reason = 2;
+}
+
+// --- GPU info ---
+
+message GPUInfoRequest {}
+
+message GPUDevice {
+  int32 id = 1;
+  string name = 2;
+  int64 total_memory_bytes = 3;
+  int64 free_memory_bytes = 4;
+  string compute_capability = 5;
+}
+
+message GPUInfoResponse {
+  repeated GPUDevice devices = 1;
+  string cuda_version = 2;
+  string driver_version = 3;
+}
+
+// --- Admin operations ---
+
+message RotatorRegenerateRequest {
+  string collection = 1;
+  string confirm = 2;  // Must be "i understand this will invalidate all indexes"
+}
+
+message RotatorRegenerateResponse {
+  uint64 new_seed = 1;
+  string message = 2;
+}
+
+message CodebookUpgradeRequest {
+  string collection = 1;
+  string from_version = 2;
+  string to_version = 3;
+}
+
+message CodebookUpgradeResponse {
+  string message = 1;
+}
