@@ -17,9 +17,9 @@ type Density interface {
 //
 // Supported on [-1, 1].
 type BetaDensity struct {
-	dim    int
-	coeff  float64
-	dExp   float64 // (d-3)/2
+	dim   int
+	coeff float64
+	dExp  float64 // (d-3)/2
 }
 
 // NewBetaDensity creates a BetaDensity for dimension d.
@@ -39,6 +39,7 @@ func NewBetaDensity(d int) *BetaDensity {
 	}
 }
 
+// PDF returns the probability density at x for the Beta distribution.
 func (b *BetaDensity) PDF(x float64) float64 {
 	if x <= -1.0 || x >= 1.0 {
 		return 0.0
@@ -46,6 +47,7 @@ func (b *BetaDensity) PDF(x float64) float64 {
 	return b.coeff * math.Pow(1.0-x*x, b.dExp)
 }
 
+// Support returns the [-1, 1] interval for the Beta distribution.
 func (b *BetaDensity) Support() (float64, float64) {
 	return -1.0, 1.0
 }
@@ -73,10 +75,12 @@ func NewGaussianDensity(d int) *GaussianDensity {
 	}
 }
 
+// PDF returns the probability density at x for the Gaussian distribution.
 func (g *GaussianDensity) PDF(x float64) float64 {
 	return g.coeff * math.Exp(-x*x*g.invVar)
 }
 
+// Support returns the interval covering > 99.99% of the Gaussian mass.
 func (g *GaussianDensity) Support() (float64, float64) {
 	// 6 sigma covers > 99.99% of mass.
 	bound := 6.0 * g.sigma

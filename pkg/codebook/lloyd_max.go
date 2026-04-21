@@ -25,9 +25,9 @@ func DefaultLloydMaxConfig(density Density, bitWidth int) LloydMaxConfig {
 	return LloydMaxConfig{
 		Density:       density,
 		BitWidth:      bitWidth,
-		Tolerance:     1e-8,
-		MaxIter:       200,
-		NumQuadPoints: 10000,
+		Tolerance:     1e-5,
+		MaxIter:       500,
+		NumQuadPoints: 20000,
 	}
 }
 
@@ -65,57 +65,82 @@ func SolveLloydMax(cfg LloydMaxConfig) (*LloydMaxResult, error) {
 	n := 1 << cfg.BitWidth
 	lo, hi := cfg.Density.Support()
 
-	// Initialize centroids using quantiles of the density for fast convergence.
-	centroids := initCentroidsQuantile(cfg.Density, lo, hi, n, cfg.NumQuadPoints)
+	// For symmetric distributions (Beta and Gaussian are both symmetric around 0),
+	// solve only the positive half and mirror. This halves the problem size and
+	// guarantees exact symmetry.
+	halfN := n / 2
+	posCentroids := initCentroidsQuantile(cfg.Density, 0, hi, halfN, cfg.NumQuadPoints)
 
-	boundaries := make([]float64, n-1)
-	var prevDistortion float64
+	posBoundaries := make([]float64, halfN-1)
+	prevPos := make([]float64, halfN)
 	converged := false
 	iter := 0
+	var distortion float64
 
 	for iter = 1; iter <= cfg.MaxIter; iter++ {
-		// Step 1: Compute decision boundaries as midpoints between adjacent centroids.
-		for i := range boundaries {
-			boundaries[i] = (centroids[i] + centroids[i+1]) / 2.0
+		copy(prevPos, posCentroids)
+
+		// Compute boundaries as midpoints.
+		for i := range posBoundaries {
+			posBoundaries[i] = (posCentroids[i] + posCentroids[i+1]) / 2.0
 		}
 
-		// Step 2: Recompute centroids as conditional means over each bucket.
-		distortion := 0.0
-		for i := range centroids {
-			bucketLo := lo
+		// Recompute centroids as conditional means over each positive bucket.
+		distortion = 0.0
+		for i := range posCentroids {
+			bucketLo := 0.0
 			if i > 0 {
-				bucketLo = boundaries[i-1]
+				bucketLo = posBoundaries[i-1]
 			}
 			bucketHi := hi
-			if i < n-1 {
-				bucketHi = boundaries[i]
+			if i < halfN-1 {
+				bucketHi = posBoundaries[i]
 			}
 
 			num, den := integrateConditionalMean(cfg.Density, bucketLo, bucketHi, cfg.NumQuadPoints)
 			if den > 0 {
-				centroids[i] = num / den
+				newC := num / den
+				// Overrelaxation: step 1.5x in the update direction.
+				// This accelerates the linear convergence of Lloyd-Max.
+				const omega = 1.7
+				posCentroids[i] = prevPos[i] + omega*(newC-prevPos[i])
 			}
 
-			// Accumulate distortion: integral of (x - c_i)^2 * f(x) dx over bucket.
-			distortion += integrateDistortion(cfg.Density, bucketLo, bucketHi, centroids[i], cfg.NumQuadPoints)
+			d := integrateDistortion(cfg.Density, bucketLo, bucketHi, posCentroids[i], cfg.NumQuadPoints)
+			distortion += 2 * d // symmetric: negative half has same distortion
 		}
 
-		// Check convergence.
-		if iter > 1 && prevDistortion > 0 {
-			relChange := math.Abs(distortion-prevDistortion) / prevDistortion
-			if relChange < cfg.Tolerance {
-				converged = true
-				prevDistortion = distortion
-				break
+		// Convergence: max centroid movement relative to support range.
+		maxMove := 0.0
+		for i := range posCentroids {
+			move := math.Abs(posCentroids[i] - prevPos[i])
+			if move > maxMove {
+				maxMove = move
 			}
 		}
-		prevDistortion = distortion
+		if maxMove/(hi-lo) < cfg.Tolerance {
+			converged = true
+			break
+		}
+	}
+
+	// Mirror positive centroids to build the full codebook.
+	centroids := make([]float64, n)
+	for i := range halfN {
+		centroids[i] = -posCentroids[halfN-1-i]
+		centroids[halfN+i] = posCentroids[i]
+	}
+
+	// Build full boundaries.
+	boundaries := make([]float64, n-1)
+	for i := range boundaries {
+		boundaries[i] = (centroids[i] + centroids[i+1]) / 2.0
 	}
 
 	return &LloydMaxResult{
 		Centroids:  centroids,
 		Boundaries: boundaries,
-		Distortion: prevDistortion,
+		Distortion: distortion,
 		Iterations: iter,
 		Converged:  converged,
 	}, nil

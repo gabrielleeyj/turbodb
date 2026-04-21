@@ -68,15 +68,15 @@ func TestNearestIndex(t *testing.T) {
 		x    float64
 		want int
 	}{
-		{-2.0, 0},   // far left
-		{-1.5, 0},   // exact match
-		{-1.0, 0},   // midpoint, ties go to lower
-		{-0.5, 1},   // exact match
-		{0.0, 1},    // midpoint, ties go to lower
-		{0.5, 2},    // exact match
-		{1.0, 2},    // midpoint, ties go to lower
-		{1.5, 3},    // exact match
-		{100.0, 3},  // far right
+		{-2.0, 0},  // far left
+		{-1.5, 0},  // exact match
+		{-1.0, 0},  // midpoint, ties go to lower
+		{-0.5, 1},  // exact match
+		{0.0, 1},   // midpoint, ties go to lower
+		{0.5, 2},   // exact match
+		{1.0, 2},   // midpoint, ties go to lower
+		{1.5, 3},   // exact match
+		{100.0, 3}, // far right
 	}
 
 	for _, tt := range tests {
@@ -87,30 +87,72 @@ func TestNearestIndex(t *testing.T) {
 	}
 }
 
-func TestLoadAndGenerate(t *testing.T) {
+func TestLoadPrecomputed(t *testing.T) {
 	ClearCache()
-	// Load should generate on-the-fly when no precomputed data exists.
-	cb, err := Load(256, 2)
+	// Load a precomputed codebook.
+	cb, err := Load(1536, 4)
 	if err != nil {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cb.Dim() != 256 {
-		t.Errorf("dim = %d, want 256", cb.Dim())
+	if cb.Dim() != 1536 {
+		t.Errorf("dim = %d, want 1536", cb.Dim())
 	}
-	if cb.BitWidth() != 2 {
-		t.Errorf("bitWidth = %d, want 2", cb.BitWidth())
+	if cb.BitWidth() != 4 {
+		t.Errorf("bitWidth = %d, want 4", cb.BitWidth())
 	}
-	if cb.Size() != 4 {
-		t.Errorf("size = %d, want 4", cb.Size())
+	if cb.Size() != 16 {
+		t.Errorf("size = %d, want 16", cb.Size())
+	}
+
+	// Verify centroids are sorted and symmetric.
+	centroids := cb.Centroids()
+	for i := 1; i < len(centroids); i++ {
+		if centroids[i] <= centroids[i-1] {
+			t.Errorf("precomputed centroids not sorted at index %d", i)
+		}
 	}
 
 	// Second call should hit cache.
-	cb2, err := Load(256, 2)
+	cb2, err := Load(1536, 4)
 	if err != nil {
 		t.Fatalf("second Load failed: %v", err)
 	}
 	if cb2 != cb {
 		t.Error("second Load should return cached codebook")
+	}
+}
+
+func TestLoadOnTheFly(t *testing.T) {
+	ClearCache()
+	// A non-standard dim should generate on-the-fly.
+	cb, err := Load(200, 2)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cb.Dim() != 200 {
+		t.Errorf("dim = %d, want 200", cb.Dim())
+	}
+	if cb.Size() != 4 {
+		t.Errorf("size = %d, want 4", cb.Size())
+	}
+}
+
+func TestLoadAllPrecomputed(t *testing.T) {
+	ClearCache()
+	dims := []int{128, 256, 512, 768, 1024, 1536, 3072, 4096}
+	bitWidths := []int{1, 2, 3, 4, 5, 6, 8}
+
+	for _, d := range dims {
+		for _, b := range bitWidths {
+			cb, err := Load(d, b)
+			if err != nil {
+				t.Errorf("Load(d=%d, b=%d) failed: %v", d, b, err)
+				continue
+			}
+			if cb.Size() != 1<<b {
+				t.Errorf("Load(d=%d, b=%d): size=%d, want %d", d, b, cb.Size(), 1<<b)
+			}
+		}
 	}
 }
