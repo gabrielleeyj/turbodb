@@ -67,6 +67,42 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`
 - GPU tests use `//go:build gpu` tags.
 - PostgreSQL tests use `//go:build postgres` tags.
 
+### Package-Specific Testing
+
+**`pkg/codebook`**
+
+```bash
+# Run all codebook tests
+go test -race -v ./pkg/codebook/
+
+# Regenerate precomputed codebooks (slow, ~minutes)
+GENERATE_CODEBOOKS=1 go test -v -run TestGeneratePrecomputed ./pkg/codebook/
+```
+
+The codebook tests cover density integration, Lloyd-Max convergence, centroid symmetry, distortion monotonicity, and loading all 56 precomputed codebooks.
+
+**`pkg/rotation`**
+
+```bash
+go test -race -v ./pkg/rotation/
+
+# Benchmark rotation performance
+go test -bench BenchmarkHadamardRotator -benchmem ./pkg/rotation/
+```
+
+Tests verify norm preservation, round-trip accuracy, determinism, and serialization.
+
+**`pkg/quantizer`**
+
+```bash
+go test -race -v ./pkg/quantizer/
+
+# Benchmark batch quantization
+go test -bench BenchmarkBatchQuantize -benchmem ./pkg/quantizer/
+```
+
+Tests cover MSE round-trip accuracy, bit packing exactness, ProdQuantizer unbiasedness and variance, batch determinism, streaming, and data race detection.
+
 ## Protobuf Changes
 
 - Edit `.proto` files in `api/v1/`.
