@@ -25,10 +25,14 @@ func cacheKey(dim, bitWidth int) string {
 // Load returns a codebook for the given dimensionality and bit-width.
 // It checks the in-memory cache first, then precomputed embedded assets,
 // and finally generates one on-the-fly using Lloyd-Max.
+//
+// Uses double-checked locking: the cache is re-checked after acquiring the
+// write lock to prevent redundant loads when multiple goroutines race past
+// the initial read-lock check.
 func Load(dim, bitWidth int) (*Codebook, error) {
 	key := cacheKey(dim, bitWidth)
 
-	// Check cache.
+	// Fast path: check cache under read lock.
 	cacheMu.RLock()
 	if cb, ok := cache[key]; ok {
 		cacheMu.RUnlock()
@@ -36,22 +40,29 @@ func Load(dim, bitWidth int) (*Codebook, error) {
 	}
 	cacheMu.RUnlock()
 
-	// Try precomputed assets.
-	cb, err := loadPrecomputed(dim, bitWidth)
-	if err == nil {
-		cacheMu.Lock()
-		cache[key] = cb
+	// Slow path: acquire write lock and re-check before loading.
+	cacheMu.Lock()
+	if cb, ok := cache[key]; ok {
 		cacheMu.Unlock()
 		return cb, nil
 	}
+	cacheMu.Unlock()
 
-	// Generate on-the-fly.
-	cb, err = Generate(dim, bitWidth)
+	// Load outside the lock to avoid holding it during I/O.
+	cb, err := loadPrecomputed(dim, bitWidth)
 	if err != nil {
-		return nil, fmt.Errorf("codebook: failed to generate d=%d b=%d: %w", dim, bitWidth, err)
+		cb, err = Generate(dim, bitWidth)
+		if err != nil {
+			return nil, fmt.Errorf("codebook: failed to generate d=%d b=%d: %w", dim, bitWidth, err)
+		}
 	}
 
+	// Store under write lock; re-check in case another goroutine won the race.
 	cacheMu.Lock()
+	if existing, ok := cache[key]; ok {
+		cacheMu.Unlock()
+		return existing, nil
+	}
 	cache[key] = cb
 	cacheMu.Unlock()
 	return cb, nil
