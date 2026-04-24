@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt vet clean proto all
+.PHONY: build test lint fmt vet clean proto all cuda cuda-test cuda-clean
 
 # Default target
 all: build test lint
@@ -63,7 +63,41 @@ proto:
 	fi
 	@echo "==> Done."
 
+# Build CUDA shared library (requires CUDA toolkit)
+cuda:
+	@echo "==> Building CUDA kernels..."
+	$(MAKE) -C cuda
+	@echo "==> Done."
+
+# Run CUDA GoogleTest tests (requires GPU)
+cuda-test: cuda
+	@echo "==> Running CUDA tests..."
+	$(MAKE) -C cuda test
+	@echo "==> Done."
+
+# Build Go binaries with CUDA support
+build-cuda: cuda
+	@echo "==> Building all binaries (with CUDA)..."
+	@mkdir -p $(BUILD_DIR)
+	@for bin in $(BINARIES); do \
+		echo "    $$bin (cuda)"; \
+		CGO_LDFLAGS="-L$(CURDIR)/cuda/lib -lturboquant_cuda" \
+		go build -tags cuda -o $(BUILD_DIR)/$$bin ./cmd/$$bin; \
+	done
+	@echo "==> Done."
+
+# Run Go tests with CUDA support
+test-cuda: cuda
+	@echo "==> Running Go tests (with CUDA)..."
+	CGO_LDFLAGS="-L$(CURDIR)/cuda/lib -lturboquant_cuda" \
+	LD_LIBRARY_PATH=$(CURDIR)/cuda/lib:$(LD_LIBRARY_PATH) \
+	go test -tags cuda -race -count=1 ./...
+	@echo "==> Done."
+
 # Clean build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out
+
+cuda-clean:
+	$(MAKE) -C cuda clean
