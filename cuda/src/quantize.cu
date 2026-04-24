@@ -82,6 +82,11 @@ __global__ void quantize_mse_kernel(const float* __restrict__ rotated_d,
     uint8_t* code_out = codes_out_d + (size_t)vec_idx * code_bytes;
 
     /* Quantize each coordinate: find nearest centroid index. */
+    /* Compute base offset for this vector's codes relative to the
+     * (cudaMalloc-aligned) buffer start so atomicOr always targets a
+     * properly 4-byte-aligned address. */
+    size_t vec_code_base = (size_t)vec_idx * code_bytes;
+
     for (int i = tid; i < d; i += blockDim.x) {
         float normalized = vec[i];
 
@@ -100,8 +105,14 @@ __global__ void quantize_mse_kernel(const float* __restrict__ rotated_d,
             int bits_to_write = (remaining < bits_avail) ? remaining : bits_avail;
 
             uint8_t chunk = (uint8_t)(val & ((1 << bits_to_write) - 1));
-            atomicOr((unsigned int*)(code_out + (byte_idx & ~3)),
-                     (unsigned int)(chunk << bit_off) << ((byte_idx & 3) * 8));
+
+            /* Align to 4-byte boundary relative to buffer base. */
+            size_t abs_byte = vec_code_base + byte_idx;
+            size_t aligned = abs_byte & ~(size_t)3;
+            int word_shift = (int)(abs_byte - aligned) * 8;
+
+            atomicOr((unsigned int*)(codes_out_d + aligned),
+                     (unsigned int)(chunk << bit_off) << word_shift);
 
             val >>= bits_to_write;
             bit_pos += bits_to_write;

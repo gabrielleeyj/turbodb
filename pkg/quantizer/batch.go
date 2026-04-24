@@ -1,6 +1,7 @@
 package quantizer
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -107,24 +108,48 @@ func BatchEstimateIP(pq *ProdQuantizer, queries [][]float32, codes []ProdCode) (
 }
 
 // StreamQuantize reads vectors from an input channel, quantizes them, and
-// sends results to an output channel. Runs until the input channel is closed.
-func StreamQuantize(q Quantizer, in <-chan []float32, out chan<- Code) error {
+// sends results to an output channel. Runs until the input channel is closed
+// or the context is cancelled.
+//
+// The caller MUST close the input channel to signal completion.
+// The output channel is closed when all workers finish.
+func StreamQuantize(ctx context.Context, q Quantizer, in <-chan []float32, out chan<- Code) error {
 	workers := runtime.NumCPU()
 
+	// Derive a cancellable context so the first error tears down all workers.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var wg sync.WaitGroup
-	errCh := make(chan error, workers)
+	errCh := make(chan error, 1)
 
 	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for x := range in {
-				code, err := q.Quantize(x)
-				if err != nil {
-					errCh <- err
+			for {
+				select {
+				case <-ctx.Done():
 					return
+				case x, ok := <-in:
+					if !ok {
+						return
+					}
+					code, err := q.Quantize(x)
+					if err != nil {
+						select {
+						case errCh <- fmt.Errorf("stream quantize: %w", err):
+						default:
+						}
+						cancel()
+						return
+					}
+					select {
+					case out <- code:
+					case <-ctx.Done():
+						return
+					}
 				}
-				out <- code
 			}
 		}()
 	}
@@ -136,6 +161,9 @@ func StreamQuantize(q Quantizer, in <-chan []float32, out chan<- Code) error {
 	case err := <-errCh:
 		return err
 	default:
+		if ctx.Err() != nil && ctx.Err() != context.Canceled {
+			return ctx.Err()
+		}
 		return nil
 	}
 }

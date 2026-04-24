@@ -57,11 +57,16 @@ __global__ void extract_signs_kernel(const float* __restrict__ projections,
     int byte_idx = bit_idx / 8;
     int bit_off = bit_idx % 8;
     int sign_bytes = tq_div_ceil(proj_dim, 8);
-    uint8_t* signs = signs_out + (size_t)vec_idx * sign_bytes;
 
     if (proj[bit_idx] >= 0.0f) {
-        atomicOr((unsigned int*)(signs + (byte_idx & ~3)),
-                 (unsigned int)(1 << bit_off) << ((byte_idx & 3) * 8));
+        /* Align to 4-byte boundary relative to the buffer base
+         * (signs_out is cudaMalloc-aligned) to avoid misaligned atomics. */
+        size_t abs_byte = (size_t)vec_idx * sign_bytes + byte_idx;
+        size_t aligned = abs_byte & ~(size_t)3;
+        int word_shift = (int)(abs_byte - aligned) * 8;
+
+        atomicOr((unsigned int*)(signs_out + aligned),
+                 (unsigned int)(1 << bit_off) << word_shift);
     }
 }
 

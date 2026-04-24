@@ -1,6 +1,7 @@
 package codebook
 
 import (
+	"sync"
 	"testing"
 )
 
@@ -135,6 +136,37 @@ func TestLoadOnTheFly(t *testing.T) {
 	}
 	if cb.Size() != 4 {
 		t.Errorf("size = %d, want 4", cb.Size())
+	}
+}
+
+func TestLoadConcurrentNoRace(t *testing.T) {
+	ClearCache()
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+	results := make([]*Codebook, goroutines)
+	errs := make([]error, goroutines)
+
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(idx int) {
+			defer wg.Done()
+			results[idx], errs[idx] = Load(1536, 4)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("goroutine %d: %v", i, err)
+		}
+	}
+
+	// All goroutines must get the exact same *Codebook pointer.
+	for i := 1; i < goroutines; i++ {
+		if results[i] != results[0] {
+			t.Errorf("goroutine %d got different codebook pointer", i)
+		}
 	}
 }
 

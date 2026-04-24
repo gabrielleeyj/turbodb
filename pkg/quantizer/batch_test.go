@@ -1,6 +1,7 @@
 package quantizer
 
 import (
+	"context"
 	"math"
 	"math/rand/v2"
 	"testing"
@@ -129,7 +130,7 @@ func TestStreamQuantize(t *testing.T) {
 		close(in)
 	}()
 
-	err := StreamQuantize(q, in, out)
+	err := StreamQuantize(context.Background(), q, in, out)
 	if err != nil {
 		t.Fatalf("StreamQuantize: %v", err)
 	}
@@ -141,6 +142,36 @@ func TestStreamQuantize(t *testing.T) {
 	}
 	if count != n {
 		t.Errorf("got %d codes, want %d", count, n)
+	}
+}
+
+func TestStreamQuantizeCancelStopsWorkers(t *testing.T) {
+	dim := 256
+	bw := 4
+	q := newTestMSEQuantizer(t, dim, bw)
+
+	rng := rand.New(rand.NewPCG(55, 66)) //nolint:gosec // deterministic test
+
+	ctx, cancel := context.WithCancel(context.Background())
+	in := make(chan []float32)
+	out := make(chan Code, 100)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- StreamQuantize(ctx, q, in, out)
+	}()
+
+	// Send a few vectors then cancel.
+	for range 5 {
+		in <- randomUnitVec(rng, dim)
+	}
+	cancel()
+
+	// StreamQuantize should return promptly without blocking.
+	err := <-done
+	// err may be nil or context.Canceled — either is acceptable.
+	if err != nil {
+		t.Logf("StreamQuantize returned: %v (expected)", err)
 	}
 }
 

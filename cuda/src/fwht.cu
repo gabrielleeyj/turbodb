@@ -44,16 +44,25 @@ __global__ void fwht_forward_kernel(const float* __restrict__ input,
     }
     __syncthreads();
 
-    /* Butterfly stages: log2(d) stages. */
+    /* Butterfly stages: log2(d) stages.
+     * Each thread handles non-overlapping butterfly pairs to avoid
+     * concurrent read/write of the same shared-memory locations. */
     for (int half = 1; half < d; half <<= 1) {
-        for (int i = tid; i < d; i += blockDim.x) {
-            int j = i ^ half;
-            if (j > i) {
-                float a = smem[i];
-                float b = smem[j];
-                smem[i] = a + b;
-                smem[j] = a - b;
-            }
+        int pairs = d / 2;
+        for (int p = tid; p < pairs; p += blockDim.x) {
+            /* Map pair index to the two butterfly indices.
+             * Within each block of (2*half) elements, the first half
+             * indices pair with the second half. */
+            int block_size = half << 1;
+            int block_id = p / half;
+            int offset = p % half;
+            int i = block_id * block_size + offset;
+            int j = i + half;
+
+            float a = smem[i];
+            float b = smem[j];
+            smem[i] = a + b;
+            smem[j] = a - b;
         }
         __syncthreads();
     }
@@ -84,16 +93,21 @@ __global__ void fwht_inverse_kernel(const float* __restrict__ input,
     }
     __syncthreads();
 
-    /* Butterfly stages (same as forward — H is symmetric). */
+    /* Butterfly stages (same as forward — H is symmetric).
+     * Each thread handles non-overlapping butterfly pairs. */
     for (int half = 1; half < d; half <<= 1) {
-        for (int i = tid; i < d; i += blockDim.x) {
-            int j = i ^ half;
-            if (j > i) {
-                float a = smem[i];
-                float b = smem[j];
-                smem[i] = a + b;
-                smem[j] = a - b;
-            }
+        int pairs = d / 2;
+        for (int p = tid; p < pairs; p += blockDim.x) {
+            int block_size = half << 1;
+            int block_id = p / half;
+            int offset = p % half;
+            int i = block_id * block_size + offset;
+            int j = i + half;
+
+            float a = smem[i];
+            float b = smem[j];
+            smem[i] = a + b;
+            smem[j] = a - b;
         }
         __syncthreads();
     }
