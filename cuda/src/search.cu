@@ -96,10 +96,9 @@ __global__ void search_mse_kernel(const uint8_t* __restrict__ q_codes,
     const uint8_t* q_code = q_codes + (size_t)q_idx * code_bytes;
     float q_norm = q_norms[q_idx];
 
-    /* Thread-local top-K heap. Max K=128 per thread. */
+    /* Thread-local top-K heap. k is validated <= 128 by the API layer. */
     HeapEntry local_heap[128];
-    int actual_k = (k < 128) ? k : 128;
-    heap_init(local_heap, actual_k);
+    heap_init(local_heap, k);
 
     /* Each thread processes a strided set of database vectors. */
     for (int db_idx = threadIdx.x; db_idx < n_db; db_idx += blockDim.x) {
@@ -149,14 +148,14 @@ __global__ void search_mse_kernel(const uint8_t* __restrict__ q_codes,
         /* Scale by norms. */
         ip *= q_norm * db_norm;
 
-        heap_insert(local_heap, actual_k, ip, (int64_t)db_idx);
+        heap_insert(local_heap, k, ip, (int64_t)db_idx);
     }
 
     /* Write thread-local heap to global output.
      * For simplicity, each thread writes its local top-K.
      * Final merge happens on the host or in a separate reduction kernel. */
-    int thread_offset = q_idx * blockDim.x * actual_k + threadIdx.x * actual_k;
-    for (int i = 0; i < actual_k; i++) {
+    int thread_offset = q_idx * blockDim.x * k + threadIdx.x * k;
+    for (int i = 0; i < k; i++) {
         scores_out[thread_offset + i] = local_heap[i].score;
         ids_out[thread_offset + i] = local_heap[i].id;
     }
@@ -240,6 +239,13 @@ tq_status_t tq_search_brute_force(tq_context_t ctx,
     if (cb == nullptr) return TQ_ERR_INVALID_ARG;
     if (n_queries <= 0 || n_db <= 0 || k <= 0) return TQ_ERR_INVALID_ARG;
     if (k > 128) return TQ_ERR_INVALID_ARG; /* max K per thread */
+
+    /* When QJL correction is enabled, all sign/norm pointers must be valid. */
+    if (proj_dim > 0) {
+        if (query_signs_d == nullptr || db_signs_d == nullptr ||
+            query_res_norms_d == nullptr || db_res_norms_d == nullptr)
+            return TQ_ERR_INVALID_ARG;
+    }
 
     cudaStream_t stream = tq_get_stream(ctx);
     tq_status_t status;

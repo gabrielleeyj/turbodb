@@ -169,14 +169,12 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
     }
 
     {
-        cublasHandle_t handle;
-        cublasStatus_t cstat = cublasCreate(&handle);
-        if (cstat != CUBLAS_STATUS_SUCCESS) {
+        cublasHandle_t handle = tq_get_cublas(ctx);
+        if (handle == nullptr) {
             tq_device_free(ctx, G_d);
             tq_device_free(ctx, proj_d);
             return TQ_ERR_CUDA;
         }
-        cublasSetStream(handle, stream);
 
         /* cuBLAS is column-major. Our data is row-major.
          * Row-major A (n x dim) in col-major is A^T (dim x n).
@@ -197,7 +195,7 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
          * So: CUBLAS_OP_T on G_col (dim x proj_dim), result is proj_dim x dim * dim x n = proj_dim x n
          */
         float alpha = 1.0f, beta = 0.0f;
-        cstat = cublasSgemm(handle,
+        cublasStatus_t cstat = cublasSgemm(handle,
                             CUBLAS_OP_T,  /* transpose G (stored col-major as dim x proj_dim) */
                             CUBLAS_OP_N,  /* vectors (stored col-major as dim x n) */
                             proj_dim,     /* M: rows of result */
@@ -208,8 +206,6 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
                             vectors_d, dim, /* vectors: ldb = dim */
                             &beta,
                             proj_d, proj_dim); /* C: ldc = proj_dim */
-
-        cublasDestroy(handle);
 
         if (cstat != CUBLAS_STATUS_SUCCESS) {
             tq_device_free(ctx, G_d);
@@ -321,9 +317,12 @@ tq_status_t tq_qjl_estimate_ip_batch(tq_context_t ctx,
     }
 
     {
-        cublasHandle_t handle;
-        cublasCreate(&handle);
-        cublasSetStream(handle, stream);
+        cublasHandle_t handle = tq_get_cublas(ctx);
+        if (handle == nullptr) {
+            tq_device_free(ctx, G_d);
+            tq_device_free(ctx, query_proj_d);
+            return TQ_ERR_CUDA;
+        }
 
         float alpha = 1.0f, beta = 0.0f;
         /* G is row-major (proj_dim x dim) = col-major (dim x proj_dim).
@@ -336,8 +335,6 @@ tq_status_t tq_qjl_estimate_ip_batch(tq_context_t ctx,
                     query_d, 1,
                     &beta,
                     query_proj_d, 1);
-
-        cublasDestroy(handle);
     }
 
     tq_device_free(ctx, G_d);

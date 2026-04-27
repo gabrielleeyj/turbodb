@@ -8,6 +8,7 @@
 
 #include "turboquant.h"
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,6 +19,9 @@ cudaStream_t tq_get_stream(tq_context_t ctx);
 
 /* Access the device ID from a context. */
 int tq_get_device_id(tq_context_t ctx);
+
+/* Access the lazily-initialized cuBLAS handle from a context. */
+cublasHandle_t tq_get_cublas(tq_context_t ctx);
 
 #ifdef __cplusplus
 }

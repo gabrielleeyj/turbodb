@@ -6,6 +6,7 @@
 
 #include "turboquant.h"
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -15,9 +16,10 @@
  * -------------------------------------------------------------------------- */
 
 struct tq_context_s {
-    int          device_id;
-    cudaStream_t stream;
-    char         last_error[512];
+    int            device_id;
+    cudaStream_t   stream;
+    cublasHandle_t cublas;       /* Lazily initialized, reused across calls. */
+    char           last_error[512];
 };
 
 /* --------------------------------------------------------------------------
@@ -78,6 +80,9 @@ void tq_destroy(tq_context_t ctx) {
         return;
     }
     cudaSetDevice(ctx->device_id);
+    if (ctx->cublas != nullptr) {
+        cublasDestroy(ctx->cublas);
+    }
     cudaStreamDestroy(ctx->stream);
     free(ctx);
 }
@@ -165,4 +170,14 @@ cudaStream_t tq_get_stream(tq_context_t ctx) {
 
 int tq_get_device_id(tq_context_t ctx) {
     return ctx ? ctx->device_id : -1;
+}
+
+/* Lazily create and cache a cuBLAS handle, bound to the context's stream. */
+cublasHandle_t tq_get_cublas(tq_context_t ctx) {
+    if (ctx == nullptr) return nullptr;
+    if (ctx->cublas == nullptr) {
+        cublasCreate(&ctx->cublas);
+        cublasSetStream(ctx->cublas, ctx->stream);
+    }
+    return ctx->cublas;
 }
