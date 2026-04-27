@@ -20,6 +20,12 @@ enum QuantizationVariant {
 }
 
 // CollectionConfig defines the configuration for a vector collection.
+// Validation constraints (enforced at server boundary):
+//   name:       non-empty, max 128 chars
+//   dimension:  1..8192
+//   bit_width:  1..8
+//   metric:     must not be METRIC_UNSPECIFIED
+//   variant:    must not be QUANTIZATION_VARIANT_UNSPECIFIED
 message CollectionConfig {
   string name = 1;
   int32 dimension = 2;
@@ -30,6 +36,9 @@ message CollectionConfig {
 }
 
 // Vector represents a single vector with its ID and data.
+// Validation constraints (enforced at server boundary):
+//   id:     non-empty
+//   values: len == collection.dimension; no NaN/Inf
 message Vector {
   string id = 1;
   repeated float values = 2;

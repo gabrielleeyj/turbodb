@@ -97,6 +97,12 @@ message DeleteResponse {}
 
 // --- Search ---
 
+// SearchRequest performs a similarity search.
+// Validation constraints (enforced at server boundary):
+//   collection: non-empty
+//   query:      len == collection.dimension; no NaN/Inf
+//   top_k:      1..1000
+//   ef_search:  0 (default) or >= top_k
 message SearchRequest {
   string collection = 1;
   repeated float query = 2;
