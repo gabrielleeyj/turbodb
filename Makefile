@@ -91,6 +91,7 @@ test-cuda: cuda
 	@echo "==> Running Go tests (with CUDA)..."
 	CGO_LDFLAGS="-L$(CURDIR)/cuda/lib -lturboquant_cuda" \
 	LD_LIBRARY_PATH=$(CURDIR)/cuda/lib:$(LD_LIBRARY_PATH) \
+	DYLD_LIBRARY_PATH=$(CURDIR)/cuda/lib:$(DYLD_LIBRARY_PATH) \
 	go test -tags cuda -race -count=1 ./...
 	@echo "==> Done."
 

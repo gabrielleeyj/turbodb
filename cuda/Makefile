@@ -68,7 +68,9 @@ test: $(LIB) $(TEST_SRCS)
 		-L$(GTEST_LIB) -lgtest -lgtest_main \
 		$(LDFLAGS) -lpthread \
 		-o $(TEST_BIN)
-	LD_LIBRARY_PATH=$(BUILD_DIR):$(LD_LIBRARY_PATH) $(TEST_BIN)
+	LD_LIBRARY_PATH=$(BUILD_DIR):$(LD_LIBRARY_PATH) \
+	DYLD_LIBRARY_PATH=$(BUILD_DIR):$(DYLD_LIBRARY_PATH) \
+	$(TEST_BIN)
 
 clean:
 	rm -rf $(BUILD_DIR)
