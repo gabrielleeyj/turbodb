@@ -1,6 +1,7 @@
 package codebook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -51,7 +52,7 @@ func Load(dim, bitWidth int) (*Codebook, error) {
 	// Load outside the lock to avoid holding it during I/O.
 	cb, err := loadPrecomputed(dim, bitWidth)
 	if err != nil {
-		cb, err = Generate(dim, bitWidth)
+		cb, err = Generate(context.Background(), dim, bitWidth)
 		if err != nil {
 			return nil, fmt.Errorf("codebook: failed to generate d=%d b=%d: %w", dim, bitWidth, err)
 		}
@@ -69,10 +70,11 @@ func Load(dim, bitWidth int) (*Codebook, error) {
 }
 
 // Generate creates a new codebook using Lloyd-Max for the given dim and bitWidth.
-func Generate(dim, bitWidth int) (*Codebook, error) {
+// The context allows callers to cancel or time out the generation.
+func Generate(ctx context.Context, dim, bitWidth int) (*Codebook, error) {
 	density := DensityForDim(dim)
 	cfg := DefaultLloydMaxConfig(density, bitWidth)
-	result, err := SolveLloydMax(cfg)
+	result, err := SolveLloydMax(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,9 @@ import (
 	"math/rand/v2"
 )
 
+// errNaNOrInf is returned when vector input contains NaN or Inf values.
+var errNaNOrInf = fmt.Errorf("qjl: input contains NaN or Inf")
+
 // QJLSketch implements the 1-bit Quantized Johnson-Lindenstrauss transform
 // from Definition 1 of the TurboQuant paper.
 // It projects a vector using a seeded Gaussian matrix and takes the sign.
@@ -31,7 +34,11 @@ func NewQJLSketch(dim, projDim int, seed uint64) (*QJLSketch, error) {
 // Sign computes the 1-bit QJL sketch of x: sign(G·x) where G is a random
 // Gaussian matrix seeded deterministically. Returns packed sign bits.
 // Also returns the L2 norm of x for the inner-product estimator.
-func (q *QJLSketch) Sign(x []float32) (signBits []byte, norm float32) {
+// Returns an error if the input contains NaN or Inf values.
+func (q *QJLSketch) Sign(x []float32) (signBits []byte, norm float32, err error) {
+	if containsNaNOrInf(x) {
+		return nil, 0, errNaNOrInf
+	}
 	norm = vecNorm(x)
 
 	// Each sign bit is the sign of a random projection.
@@ -61,18 +68,23 @@ func (q *QJLSketch) Sign(x []float32) (signBits []byte, norm float32) {
 		}
 	}
 
-	return signBits, norm
+	return signBits, norm, nil
 }
 
 // EstimateIP estimates <x, y> given x's QJL sketch and the raw vector y.
 // Uses the unbiased estimator from the paper.
-func (q *QJLSketch) EstimateIP(signBits []byte, xNorm float32, y []float32) float32 {
+// Returns an error if y contains NaN or Inf values.
+func (q *QJLSketch) EstimateIP(signBits []byte, xNorm float32, y []float32) (float32, error) {
+	if containsNaNOrInf(y) {
+		return 0, errNaNOrInf
+	}
+
 	// Compute sign(G·y) and match against signBits.
 	rng := rand.New(rand.NewPCG(q.seed, q.seed^0xcafebabe)) //nolint:gosec // same seed for matching
 
 	yNorm := vecNorm(y)
 	if xNorm < 1e-30 || yNorm < 1e-30 {
-		return 0
+		return 0, nil
 	}
 
 	var agree int
@@ -98,7 +110,7 @@ func (q *QJLSketch) EstimateIP(signBits []byte, xNorm float32, y []float32) floa
 	// Then <x,y> ≈ ‖x‖·‖y‖·cos(angle)
 	disagree := q.projDim - agree
 	cosEst := 1.0 - 2.0*float64(disagree)/float64(q.projDim)
-	return xNorm * yNorm * float32(cosEst)
+	return xNorm * yNorm * float32(cosEst), nil
 }
 
 // ProdCode extends Code with QJL sketch data for inner-product estimation.
@@ -166,7 +178,10 @@ func (p *ProdQuantizer) Quantize(x []float32) (ProdCode, error) {
 	}
 
 	// Step 4: QJL sketch of residual.
-	signBits, resNorm := p.qjl.Sign(residual)
+	signBits, resNorm, err := p.qjl.Sign(residual)
+	if err != nil {
+		return ProdCode{}, fmt.Errorf("prodquantizer: qjl sign: %w", err)
+	}
 
 	return ProdCode{
 		MSECode:      mseCode,
@@ -196,7 +211,10 @@ func (p *ProdQuantizer) EstimateInnerProduct(y []float32, c ProdCode) (float32, 
 	}
 
 	// Part 2: QJL correction for residual contribution.
-	qjlIP := p.qjl.EstimateIP(c.SignBits, c.ResidualNorm, y)
+	qjlIP, err := p.qjl.EstimateIP(c.SignBits, c.ResidualNorm, y)
+	if err != nil {
+		return 0, fmt.Errorf("prodquantizer: qjl estimate IP: %w", err)
+	}
 
 	return float32(mseIP) + qjlIP, nil
 }
@@ -224,6 +242,9 @@ func EstimateIP(y []float32, code ProdCode, mseQ *MSEQuantizer, qjl *QJLSketch) 
 		ip += float64(y[i]) * float64(xHat[i])
 	}
 
-	qjlCorrection := qjl.EstimateIP(code.SignBits, code.ResidualNorm, y)
+	qjlCorrection, err := qjl.EstimateIP(code.SignBits, code.ResidualNorm, y)
+	if err != nil {
+		return 0, fmt.Errorf("estimate IP: %w", err)
+	}
 	return float32(ip) + qjlCorrection, nil
 }

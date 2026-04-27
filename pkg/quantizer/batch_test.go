@@ -22,7 +22,7 @@ func TestBatchQuantize(t *testing.T) {
 		xs[i] = randomUnitVec(rng, dim)
 	}
 
-	codes, err := BatchQuantize(q, xs)
+	codes, err := BatchQuantize(context.Background(), q, xs)
 	if err != nil {
 		t.Fatalf("BatchQuantize: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestBatchQuantizeEmpty(t *testing.T) {
 	bw := 4
 	q := newTestMSEQuantizer(t, dim, bw)
 
-	codes, err := BatchQuantize(q, nil)
+	codes, err := BatchQuantize(context.Background(), q, nil)
 	if err != nil {
 		t.Fatalf("BatchQuantize nil: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestBatchEstimateIP(t *testing.T) {
 		}
 	}
 
-	result, err := BatchEstimateIP(pq, queries, codes)
+	result, err := BatchEstimateIP(context.Background(), pq, queries, codes)
 	if err != nil {
 		t.Fatalf("BatchEstimateIP: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestBatchQuantizeNoDataRace(t *testing.T) {
 		xs[i] = randomUnitVec(rng, dim)
 	}
 
-	codes, err := BatchQuantize(q, xs)
+	codes, err := BatchQuantize(context.Background(), q, xs)
 	if err != nil {
 		t.Fatalf("BatchQuantize: %v", err)
 	}
@@ -215,6 +215,6 @@ func BenchmarkBatchQuantize_1k_d256_b4(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = BatchQuantize(q, xs)
+		_, _ = BatchQuantize(context.Background(), q, xs)
 	}
 }

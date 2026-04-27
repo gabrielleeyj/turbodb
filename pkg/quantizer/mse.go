@@ -55,6 +55,9 @@ func (q *MSEQuantizer) Quantize(x []float32) (Code, error) {
 	if len(x) != q.dim {
 		return Code{}, fmt.Errorf("quantizer: input dim %d != expected %d", len(x), q.dim)
 	}
+	if containsNaNOrInf(x) {
+		return Code{}, fmt.Errorf("quantizer: input contains NaN or Inf")
+	}
 
 	// Compute norm and normalize.
 	norm := vecNorm(x)
@@ -137,6 +140,16 @@ func vecNorm(x []float32) float32 {
 		sum += float64(v) * float64(v)
 	}
 	return float32(math.Sqrt(sum))
+}
+
+// containsNaNOrInf returns true if any element is NaN or ±Inf.
+func containsNaNOrInf(x []float32) bool {
+	for _, v := range x {
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeVec returns a new unit vector. If norm is ~0, returns a zero vector.

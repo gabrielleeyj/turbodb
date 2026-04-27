@@ -149,8 +149,14 @@ func TestQJLSketchDeterminism(t *testing.T) {
 		x[i] = float32(i) / 128.0
 	}
 
-	sign1, norm1 := qjl.Sign(x)
-	sign2, norm2 := qjl.Sign(x)
+	sign1, norm1, err := qjl.Sign(x)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	sign2, norm2, err := qjl.Sign(x)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
 
 	if norm1 != norm2 {
 		t.Errorf("norm mismatch: %f != %f", norm1, norm2)

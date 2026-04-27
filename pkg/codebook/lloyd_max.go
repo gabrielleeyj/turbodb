@@ -1,6 +1,7 @@
 package codebook
 
 import (
+	"context"
 	"fmt"
 	"math"
 )
@@ -48,7 +49,8 @@ type LloydMaxResult struct {
 
 // SolveLloydMax runs the iterative Lloyd-Max algorithm to find optimal
 // scalar quantization centroids for the given density.
-func SolveLloydMax(cfg LloydMaxConfig) (*LloydMaxResult, error) {
+// The context allows callers to cancel or time out long-running solves.
+func SolveLloydMax(ctx context.Context, cfg LloydMaxConfig) (*LloydMaxResult, error) {
 	if cfg.Density == nil {
 		return nil, fmt.Errorf("lloyd_max: density is nil")
 	}
@@ -78,6 +80,9 @@ func SolveLloydMax(cfg LloydMaxConfig) (*LloydMaxResult, error) {
 	var distortion float64
 
 	for iter = 1; iter <= cfg.MaxIter; iter++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("lloyd_max: %w", err)
+		}
 		copy(prevPos, posCentroids)
 
 		// Compute boundaries as midpoints.

@@ -1,6 +1,7 @@
 package codebook
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ func TestGeneratePrecomputed(t *testing.T) {
 	for _, d := range dims {
 		for _, b := range bitWidths {
 			t.Logf("generating d=%d b=%d", d, b)
-			cb, err := Generate(d, b)
+			cb, err := Generate(context.Background(), d, b)
 			if err != nil {
 				t.Fatalf("failed to generate d=%d b=%d: %v", d, b, err)
 			}

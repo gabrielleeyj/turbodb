@@ -80,6 +80,8 @@ func UnpackBits(buf []byte, bitWidth, n int) ([]int, error) {
 
 // PackedSize returns the number of bytes needed to pack n indices at bitWidth bits each,
 // plus 4 bytes for the stored norm.
+// Uses int64 intermediate to avoid overflow when n and bitWidth are large.
 func PackedSize(n, bitWidth int) int {
-	return (bitWidth*n+7)/8 + 4
+	totalBits := int64(bitWidth) * int64(n)
+	return int((totalBits+7)/8) + 4
 }

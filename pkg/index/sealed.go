@@ -2,6 +2,7 @@ package index
 
 import (
 	"container/heap"
+	"context"
 	"fmt"
 	"slices"
 	"time"
@@ -73,7 +74,7 @@ func Seal(id string, entries []VectorEntry, cfg SealedSegmentConfig) (*SealedSeg
 		rawVectors[i] = e.Values
 	}
 
-	codes, err = quantizer.BatchQuantize(mseQ, rawVectors)
+	codes, err = quantizer.BatchQuantize(context.TODO(), mseQ, rawVectors)
 	if err != nil {
 		return nil, fmt.Errorf("seal: batch quantize: %w", err)
 	}

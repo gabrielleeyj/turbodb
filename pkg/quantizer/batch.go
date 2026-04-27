@@ -7,12 +7,22 @@ import (
 	"sync"
 )
 
+// MaxBatchSize is the maximum number of vectors that can be quantized in a
+// single BatchQuantize call. This prevents unbounded memory allocation.
+const MaxBatchSize = 1_000_000
+
 // BatchQuantize quantizes multiple vectors in parallel using a worker pool
-// sized to runtime.NumCPU().
-func BatchQuantize(q Quantizer, xs [][]float32) ([]Code, error) {
+// sized to runtime.NumCPU(). The context allows callers to cancel the operation.
+func BatchQuantize(ctx context.Context, q Quantizer, xs [][]float32) ([]Code, error) {
 	if len(xs) == 0 {
 		return nil, nil
 	}
+	if len(xs) > MaxBatchSize {
+		return nil, fmt.Errorf("batch quantize: input size %d exceeds max batch size %d", len(xs), MaxBatchSize)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	codes := make([]Code, len(xs))
 	errs := make([]error, len(xs))
@@ -30,13 +40,22 @@ func BatchQuantize(q Quantizer, xs [][]float32) ([]Code, error) {
 		go func() {
 			defer wg.Done()
 			for i := range work {
+				if ctx.Err() != nil {
+					return
+				}
 				codes[i], errs[i] = q.Quantize(xs[i])
 			}
 		}()
 	}
 
 	for i := range xs {
-		work <- i
+		select {
+		case work <- i:
+		case <-ctx.Done():
+			close(work)
+			wg.Wait()
+			return nil, ctx.Err()
+		}
 	}
 	close(work)
 	wg.Wait()
@@ -54,7 +73,7 @@ func BatchQuantize(q Quantizer, xs [][]float32) ([]Code, error) {
 // BatchEstimateIP computes the inner-product matrix between queries and
 // database codes. Returns an N_q x N_c matrix where result[i][j] is
 // the estimated inner product between queries[i] and codes[j].
-func BatchEstimateIP(pq *ProdQuantizer, queries [][]float32, codes []ProdCode) ([][]float32, error) {
+func BatchEstimateIP(ctx context.Context, pq *ProdQuantizer, queries [][]float32, codes []ProdCode) ([][]float32, error) {
 	if len(queries) == 0 || len(codes) == 0 {
 		return nil, nil
 	}
@@ -80,6 +99,9 @@ func BatchEstimateIP(pq *ProdQuantizer, queries [][]float32, codes []ProdCode) (
 		go func() {
 			defer wg.Done()
 			for qi := range work {
+				if ctx.Err() != nil {
+					return
+				}
 				for ci := range nc {
 					ip, err := pq.EstimateInnerProduct(queries[qi], codes[ci])
 					if err != nil {

@@ -1,6 +1,7 @@
 package codebook
 
 import (
+	"context"
 	"math"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestLloydMaxConvergence(t *testing.T) {
 	for _, tc := range testCases {
 		density := DensityForDim(tc.dim)
 		cfg := DefaultLloydMaxConfig(density, tc.bitWidth)
-		result, err := SolveLloydMax(cfg)
+		result, err := SolveLloydMax(context.Background(), cfg)
 		if err != nil {
 			t.Fatalf("d=%d b=%d: SolveLloydMax failed: %v", tc.dim, tc.bitWidth, err)
 		}
@@ -55,7 +56,7 @@ func TestLloydMaxDistortionDecreases(t *testing.T) {
 			MaxIter:       maxIter,
 			NumQuadPoints: 10000,
 		}
-		result, err := SolveLloydMax(cfg)
+		result, err := SolveLloydMax(context.Background(), cfg)
 		if err != nil {
 			t.Fatalf("SolveLloydMax failed at iter %d: %v", maxIter, err)
 		}
@@ -72,7 +73,7 @@ func TestCodebookValues_b1_d1536(t *testing.T) {
 	// This is from the paper's analytical result for 1-bit quantization.
 	density := DensityForDim(1536)
 	cfg := DefaultLloydMaxConfig(density, 1)
-	result, err := SolveLloydMax(cfg)
+	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("SolveLloydMax failed: %v", err)
 	}
@@ -98,7 +99,7 @@ func TestCodebookValues_b1_d1536(t *testing.T) {
 func TestLloydMaxCentroidsSorted(t *testing.T) {
 	density := DensityForDim(512)
 	cfg := DefaultLloydMaxConfig(density, 4)
-	result, err := SolveLloydMax(cfg)
+	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("SolveLloydMax failed: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestLloydMaxCentroidsSymmetric(t *testing.T) {
 	// For symmetric distributions, centroids should be symmetric around 0.
 	density := DensityForDim(256)
 	cfg := DefaultLloydMaxConfig(density, 4)
-	result, err := SolveLloydMax(cfg)
+	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("SolveLloydMax failed: %v", err)
 	}
@@ -132,17 +133,17 @@ func TestLloydMaxCentroidsSymmetric(t *testing.T) {
 func TestLloydMaxInvalidConfig(t *testing.T) {
 	density := DensityForDim(128)
 
-	_, err := SolveLloydMax(LloydMaxConfig{Density: nil, BitWidth: 4, MaxIter: 100, NumQuadPoints: 1000})
+	_, err := SolveLloydMax(context.Background(), LloydMaxConfig{Density: nil, BitWidth: 4, MaxIter: 100, NumQuadPoints: 1000})
 	if err == nil {
 		t.Error("expected error for nil density")
 	}
 
-	_, err = SolveLloydMax(LloydMaxConfig{Density: density, BitWidth: 0, MaxIter: 100, NumQuadPoints: 1000})
+	_, err = SolveLloydMax(context.Background(), LloydMaxConfig{Density: density, BitWidth: 0, MaxIter: 100, NumQuadPoints: 1000})
 	if err == nil {
 		t.Error("expected error for bitWidth=0")
 	}
 
-	_, err = SolveLloydMax(LloydMaxConfig{Density: density, BitWidth: 4, MaxIter: 0, NumQuadPoints: 1000})
+	_, err = SolveLloydMax(context.Background(), LloydMaxConfig{Density: density, BitWidth: 4, MaxIter: 0, NumQuadPoints: 1000})
 	if err == nil {
 		t.Error("expected error for maxIter=0")
 	}
