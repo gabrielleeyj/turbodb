@@ -298,6 +298,10 @@ tq_status_t tq_quantize_mse_batch(tq_context_t ctx,
     /* Step 1: Compute norms. */
     compute_norms_kernel<<<n, TQ_BLOCK_SIZE, 0, stream>>>(
         vectors_d, dim, n, norms_d);
+    TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+        tq_device_free(ctx, padded_d);
+        tq_device_free(ctx, norms_d);
+    });
 
     /* Step 2: Pad vectors to out_dim (zero-padded). */
     {
@@ -306,10 +310,18 @@ tq_status_t tq_quantize_mse_batch(tq_context_t ctx,
         extern __global__ void pad_vectors_kernel(const float*, float*, int, int, int);
         pad_vectors_kernel<<<grid, TQ_BLOCK_SIZE, 0, stream>>>(
             vectors_d, padded_d, dim, out_dim, n);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+            tq_device_free(ctx, padded_d);
+            tq_device_free(ctx, norms_d);
+        });
     }
 
     /* Step 3: Normalize in padded space. */
     normalize_kernel<<<n, TQ_BLOCK_SIZE, 0, stream>>>(padded_d, norms_d, out_dim, n);
+    TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+        tq_device_free(ctx, padded_d);
+        tq_device_free(ctx, norms_d);
+    });
 
     /* Step 4: Apply FWHT rotation. */
     status = tq_fwht_batch(ctx, rot, padded_d, n, padded_d);
@@ -326,6 +338,10 @@ tq_status_t tq_quantize_mse_batch(tq_context_t ctx,
         int blocks = tq_div_ceil(total_code_bytes, TQ_BLOCK_SIZE);
         zero_codes_kernel<<<blocks, TQ_BLOCK_SIZE, 0, stream>>>(
             codes_out_d, total_code_bytes);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+            tq_device_free(ctx, padded_d);
+            tq_device_free(ctx, norms_d);
+        });
     }
 
     /* Step 6: Quantize. */
@@ -373,6 +389,7 @@ tq_status_t tq_dequantize_mse_batch(tq_context_t ctx,
         dequantize_mse_kernel<<<n, TQ_BLOCK_SIZE, smem, stream>>>(
             codes_d, cb->centroids_d, cb_size,
             out_dim, bit_width, rotated_d);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, tq_device_free(ctx, rotated_d));
     }
 
     /* Step 2: Inverse rotation. */
@@ -384,6 +401,7 @@ tq_status_t tq_dequantize_mse_batch(tq_context_t ctx,
 
     /* Step 3: Rescale by stored norms. */
     rescale_kernel<<<n, TQ_BLOCK_SIZE, 0, stream>>>(rotated_d, norms_d, out_dim, n);
+    TQ_CHECK_LAUNCH_CLEANUP(ctx, tq_device_free(ctx, rotated_d));
 
     /* Step 4: Copy only the first dim elements to output. */
     {

@@ -134,6 +134,7 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
     /* Step 1: Compute norms. */
     qjl_compute_norms_kernel<<<n, TQ_BLOCK_SIZE, 0, stream>>>(
         vectors_d, dim, n, norms_out_d);
+    TQ_CHECK_LAUNCH(ctx);
 
     /* Step 2: Generate Gaussian projection matrix G (proj_dim x dim). */
     float* G_d = nullptr;
@@ -146,6 +147,7 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
         int blocks = tq_div_ceil(total, TQ_BLOCK_SIZE);
         generate_gaussian_kernel<<<blocks, TQ_BLOCK_SIZE, 0, stream>>>(
             G_d, proj_dim, dim, seed);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, tq_device_free(ctx, G_d));
     }
 
     /* Step 3: GEMM: projections = G * vectors^T -> proj_dim x n
@@ -229,6 +231,7 @@ tq_status_t tq_qjl_sketch_batch(tq_context_t ctx,
         int blocks = tq_div_ceil(total_sign_bytes, TQ_BLOCK_SIZE);
         zero_bytes_kernel<<<blocks, TQ_BLOCK_SIZE, 0, stream>>>(
             signs_out_d, total_sign_bytes);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, tq_device_free(ctx, proj_d));
     }
 
     {
@@ -305,6 +308,7 @@ tq_status_t tq_qjl_estimate_ip_batch(tq_context_t ctx,
         int blocks = tq_div_ceil(total, TQ_BLOCK_SIZE);
         generate_gaussian_kernel<<<blocks, TQ_BLOCK_SIZE, 0, stream>>>(
             G_d, proj_dim, dim, seed);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, tq_device_free(ctx, G_d));
     }
 
     /* query_proj = G * query (proj_dim x 1). */
@@ -348,6 +352,10 @@ tq_status_t tq_qjl_estimate_ip_batch(tq_context_t ctx,
 
     qjl_compute_norms_kernel<<<1, TQ_BLOCK_SIZE, 0, stream>>>(
         query_d, dim, 1, query_norm_d);
+    TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+        tq_device_free(ctx, query_proj_d);
+        tq_device_free(ctx, query_norm_d);
+    });
 
     float query_norm_h;
     cudaMemcpyAsync(&query_norm_h, query_norm_d, sizeof(float),

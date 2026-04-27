@@ -68,6 +68,21 @@ static inline int tq_next_pow2(int n) {
     return v;
 }
 
+/* Check for launch errors immediately after a <<<>>> kernel call.
+ * Must be called inside a function returning tq_status_t. */
+#define TQ_CHECK_LAUNCH(ctx) \
+    do { \
+        cudaError_t _err = cudaGetLastError(); \
+        if (_err != cudaSuccess) return tq_check_cuda((ctx), _err); \
+    } while (0)
+
+/* Variant that performs cleanup before returning on failure. */
+#define TQ_CHECK_LAUNCH_CLEANUP(ctx, cleanup) \
+    do { \
+        cudaError_t _err = cudaGetLastError(); \
+        if (_err != cudaSuccess) { cleanup; return tq_check_cuda((ctx), _err); } \
+    } while (0)
+
 /* Common block/grid sizing. */
 #define TQ_BLOCK_SIZE 256
 

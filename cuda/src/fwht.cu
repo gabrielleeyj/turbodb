@@ -215,6 +215,7 @@ tq_status_t tq_fwht_batch(tq_context_t ctx,
 
         fwht_forward_kernel<<<n, threads, smem_bytes, stream>>>(
             vectors_d, output_d, rot->signs_d, d);
+        TQ_CHECK_LAUNCH(ctx);
     } else {
         /* Large-d path: copy to output, apply signs, global butterfly. */
         if (output_d != vectors_d) {
@@ -228,6 +229,7 @@ tq_status_t tq_fwht_batch(tq_context_t ctx,
         dim3 sign_grid(tq_div_ceil(d, TQ_BLOCK_SIZE), n);
         apply_signs_kernel<<<sign_grid, TQ_BLOCK_SIZE, 0, stream>>>(
             output_d, rot->signs_d, d);
+        TQ_CHECK_LAUNCH(ctx);
 
         /* Butterfly stages. */
         int total_pairs = d / 2;
@@ -235,6 +237,7 @@ tq_status_t tq_fwht_batch(tq_context_t ctx,
             dim3 grid(tq_div_ceil(total_pairs, TQ_BLOCK_SIZE), n);
             fwht_global_butterfly_kernel<<<grid, TQ_BLOCK_SIZE, 0, stream>>>(
                 output_d, d, half);
+            TQ_CHECK_LAUNCH(ctx);
         }
 
         /* Apply S2 sign flip. */
@@ -265,6 +268,7 @@ tq_status_t tq_fwht_inverse_batch(tq_context_t ctx,
 
         fwht_inverse_kernel<<<n, threads, smem_bytes, stream>>>(
             vectors_d, output_d, rot->signs_d, d);
+        TQ_CHECK_LAUNCH(ctx);
     } else {
         if (output_d != vectors_d) {
             cudaError_t err = cudaMemcpyAsync(
@@ -278,6 +282,7 @@ tq_status_t tq_fwht_inverse_batch(tq_context_t ctx,
         /* Apply S2 first for inverse. */
         apply_signs_kernel<<<sign_grid, TQ_BLOCK_SIZE, 0, stream>>>(
             output_d, rot->signs_d, d);
+        TQ_CHECK_LAUNCH(ctx);
 
         /* Butterfly stages. */
         int total_pairs = d / 2;
@@ -285,6 +290,7 @@ tq_status_t tq_fwht_inverse_batch(tq_context_t ctx,
             dim3 grid(tq_div_ceil(total_pairs, TQ_BLOCK_SIZE), n);
             fwht_global_butterfly_kernel<<<grid, TQ_BLOCK_SIZE, 0, stream>>>(
                 output_d, d, half);
+            TQ_CHECK_LAUNCH(ctx);
         }
 
         /* Apply S1 and scale. */

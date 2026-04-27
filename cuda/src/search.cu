@@ -273,6 +273,10 @@ tq_status_t tq_search_brute_force(tq_context_t ctx,
             out_dim, bit_width,
             k,
             scores_d, ids_d);
+        TQ_CHECK_LAUNCH_CLEANUP(ctx, {
+            tq_device_free(ctx, scores_d);
+            tq_device_free(ctx, ids_d);
+        });
     }
 
     /* Copy results to host. */
