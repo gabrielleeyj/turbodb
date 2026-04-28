@@ -2,6 +2,7 @@ package quantizer
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 )
 
@@ -36,6 +37,9 @@ func NewQJLSketch(dim, projDim int, seed uint64) (*QJLSketch, error) {
 // Also returns the L2 norm of x for the inner-product estimator.
 // Returns an error if the input contains NaN or Inf values.
 func (q *QJLSketch) Sign(x []float32) (signBits []byte, norm float32, err error) {
+	if len(x) != q.dim {
+		return nil, 0, fmt.Errorf("qjl: input dim %d != expected %d", len(x), q.dim)
+	}
 	if containsNaNOrInf(x) {
 		return nil, 0, errNaNOrInf
 	}
@@ -75,6 +79,16 @@ func (q *QJLSketch) Sign(x []float32) (signBits []byte, norm float32, err error)
 // Uses the unbiased estimator from the paper.
 // Returns an error if y contains NaN or Inf values.
 func (q *QJLSketch) EstimateIP(signBits []byte, xNorm float32, y []float32) (float32, error) {
+	if len(y) != q.dim {
+		return 0, fmt.Errorf("qjl: query dim %d != expected %d", len(y), q.dim)
+	}
+	wantBytes := (q.projDim + 7) / 8
+	if len(signBits) != wantBytes {
+		return 0, fmt.Errorf("qjl: signBits len %d != expected %d", len(signBits), wantBytes)
+	}
+	if math.IsNaN(float64(xNorm)) || math.IsInf(float64(xNorm), 0) || xNorm < 0 {
+		return 0, fmt.Errorf("qjl: invalid xNorm %g", xNorm)
+	}
 	if containsNaNOrInf(y) {
 		return 0, errNaNOrInf
 	}

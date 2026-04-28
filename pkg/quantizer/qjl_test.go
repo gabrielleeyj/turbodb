@@ -178,6 +178,40 @@ func innerProduct(a, b []float32) float64 {
 	return sum
 }
 
+func TestQJLEstimateIPValidation(t *testing.T) {
+	qjl, _ := NewQJLSketch(64, 64, 7)
+	x := make([]float32, 64)
+	for i := range x {
+		x[i] = float32(i+1) / 64.0
+	}
+	signBits, norm, err := qjl.Sign(x)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	// Wrong y dim.
+	if _, err := qjl.EstimateIP(signBits, norm, make([]float32, 32)); err == nil {
+		t.Error("expected error for query dim mismatch")
+	}
+	// Wrong signBits length.
+	if _, err := qjl.EstimateIP(make([]byte, 1), norm, x); err == nil {
+		t.Error("expected error for signBits length mismatch")
+	}
+	// Negative xNorm.
+	if _, err := qjl.EstimateIP(signBits, -1, x); err == nil {
+		t.Error("expected error for negative xNorm")
+	}
+	// NaN xNorm.
+	if _, err := qjl.EstimateIP(signBits, float32(math.NaN()), x); err == nil {
+		t.Error("expected error for NaN xNorm")
+	}
+
+	// Sign() should reject wrong-dim input.
+	if _, _, err := qjl.Sign(make([]float32, 32)); err == nil {
+		t.Error("expected error for input dim mismatch in Sign")
+	}
+}
+
 func TestNewProdQuantizerValidation(t *testing.T) {
 	_, err := NewProdQuantizer(0, 4, nil, nil)
 	if err == nil {

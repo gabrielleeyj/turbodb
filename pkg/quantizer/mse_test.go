@@ -143,21 +143,9 @@ func TestMSEQuantizerZeroVector(t *testing.T) {
 	q := newTestMSEQuantizer(t, 256, 4)
 	x := make([]float32, 256) // all zeros
 
-	code, err := q.Quantize(x)
-	if err != nil {
-		t.Fatalf("Quantize zero vector: %v", err)
-	}
-
-	xHat, err := q.Dequantize(code)
-	if err != nil {
-		t.Fatalf("Dequantize: %v", err)
-	}
-
-	for i, v := range xHat {
-		if v != 0 {
-			t.Errorf("expected zero at index %d, got %f", i, v)
-			break
-		}
+	// Zero-norm vectors are not meaningful for cosine/IP search and must be rejected.
+	if _, err := q.Quantize(x); err == nil {
+		t.Error("expected error for zero-norm vector")
 	}
 }
 

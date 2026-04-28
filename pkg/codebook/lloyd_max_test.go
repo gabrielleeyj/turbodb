@@ -21,7 +21,10 @@ func TestLloydMaxConvergence(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		density := DensityForDim(tc.dim)
+		density, err := DensityForDim(tc.dim)
+		if err != nil {
+			t.Fatalf("d=%d: DensityForDim: %v", tc.dim, err)
+		}
 		cfg := DefaultLloydMaxConfig(density, tc.bitWidth)
 		result, err := SolveLloydMax(context.Background(), cfg)
 		if err != nil {
@@ -45,7 +48,10 @@ func TestLloydMaxConvergence(t *testing.T) {
 func TestLloydMaxDistortionDecreases(t *testing.T) {
 	// Verify distortion decreases monotonically by running with limited iterations
 	// and checking that more iterations never increase distortion.
-	density := DensityForDim(128)
+	density, err := DensityForDim(128)
+	if err != nil {
+		t.Fatalf("DensityForDim: %v", err)
+	}
 
 	var prevDistortion float64
 	for maxIter := 1; maxIter <= 20; maxIter++ {
@@ -71,7 +77,10 @@ func TestLloydMaxDistortionDecreases(t *testing.T) {
 func TestCodebookValues_b1_d1536(t *testing.T) {
 	// For b=1 and d=1536, centroids should be approximately ±sqrt(2/(pi*d)).
 	// This is from the paper's analytical result for 1-bit quantization.
-	density := DensityForDim(1536)
+	density, err := DensityForDim(1536)
+	if err != nil {
+		t.Fatalf("DensityForDim: %v", err)
+	}
 	cfg := DefaultLloydMaxConfig(density, 1)
 	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
@@ -97,7 +106,10 @@ func TestCodebookValues_b1_d1536(t *testing.T) {
 }
 
 func TestLloydMaxCentroidsSorted(t *testing.T) {
-	density := DensityForDim(512)
+	density, err := DensityForDim(512)
+	if err != nil {
+		t.Fatalf("DensityForDim: %v", err)
+	}
 	cfg := DefaultLloydMaxConfig(density, 4)
 	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
@@ -114,7 +126,10 @@ func TestLloydMaxCentroidsSorted(t *testing.T) {
 
 func TestLloydMaxCentroidsSymmetric(t *testing.T) {
 	// For symmetric distributions, centroids should be symmetric around 0.
-	density := DensityForDim(256)
+	density, err := DensityForDim(256)
+	if err != nil {
+		t.Fatalf("DensityForDim: %v", err)
+	}
 	cfg := DefaultLloydMaxConfig(density, 4)
 	result, err := SolveLloydMax(context.Background(), cfg)
 	if err != nil {
@@ -131,9 +146,12 @@ func TestLloydMaxCentroidsSymmetric(t *testing.T) {
 }
 
 func TestLloydMaxInvalidConfig(t *testing.T) {
-	density := DensityForDim(128)
+	density, err := DensityForDim(128)
+	if err != nil {
+		t.Fatalf("DensityForDim: %v", err)
+	}
 
-	_, err := SolveLloydMax(context.Background(), LloydMaxConfig{Density: nil, BitWidth: 4, MaxIter: 100, NumQuadPoints: 1000})
+	_, err = SolveLloydMax(context.Background(), LloydMaxConfig{Density: nil, BitWidth: 4, MaxIter: 100, NumQuadPoints: 1000})
 	if err == nil {
 		t.Error("expected error for nil density")
 	}
@@ -146,5 +164,25 @@ func TestLloydMaxInvalidConfig(t *testing.T) {
 	_, err = SolveLloydMax(context.Background(), LloydMaxConfig{Density: density, BitWidth: 4, MaxIter: 0, NumQuadPoints: 1000})
 	if err == nil {
 		t.Error("expected error for maxIter=0")
+	}
+}
+
+// asymmetricDensity is a non-symmetric density used to test that the solver
+// rejects inputs that would break its mirroring assumption.
+type asymmetricDensity struct{}
+
+func (asymmetricDensity) PDF(x float64) float64 {
+	if x < 0 || x > 1 {
+		return 0
+	}
+	// 2x on [0, 1] (mean 2/3) — clearly asymmetric.
+	return 2 * x
+}
+func (asymmetricDensity) Support() (float64, float64) { return 0, 1 }
+
+func TestLloydMaxRejectsAsymmetricDensity(t *testing.T) {
+	cfg := DefaultLloydMaxConfig(asymmetricDensity{}, 4)
+	if _, err := SolveLloydMax(context.Background(), cfg); err == nil {
+		t.Error("expected error for asymmetric density")
 	}
 }

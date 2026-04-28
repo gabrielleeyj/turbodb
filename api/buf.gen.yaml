@@ -1,10 +1,14 @@
 version: v2
+# Generated Go files land alongside their .proto source so the import path
+# matches the `option go_package = "github.com/gabrielleeyj/turbodb/api/v1"`
+# declared in each .proto. With paths=source_relative + out=.., a proto at
+# api/v1/foo.proto produces api/v1/foo.pb.go.
 plugins:
   - remote: buf.build/protocolbuffers/go
-    out: ../gen/go
+    out: ..
     opt:
       - paths=source_relative
   - remote: buf.build/grpc/go
-    out: ../gen/go
+    out: ..
     opt:
       - paths=source_relative

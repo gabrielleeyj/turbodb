@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 )
 
 // precomputedEntry is the JSON structure for embedded codebook data.
@@ -14,65 +13,35 @@ type precomputedEntry struct {
 	Centroids []float64 `json:"centroids"`
 }
 
-var (
-	cacheMu sync.RWMutex
-	cache   = make(map[string]*Codebook)
-)
+// defaultCache backs the package-level Load / ClearCache helpers.
+// Tests or multi-tenant servers that want isolation should construct their
+// own Cache via NewCache and call Cache.Get directly.
+var defaultCache = NewCache()
 
 func cacheKey(dim, bitWidth int) string {
 	return fmt.Sprintf("d%d_b%d", dim, bitWidth)
 }
 
-// Load returns a codebook for the given dimensionality and bit-width.
-// It checks the in-memory cache first, then precomputed embedded assets,
-// and finally generates one on-the-fly using Lloyd-Max.
-//
-// Uses double-checked locking: the cache is re-checked after acquiring the
-// write lock to prevent redundant loads when multiple goroutines race past
-// the initial read-lock check.
+// Load returns a codebook for the given dimensionality and bit-width using
+// the package-level default cache. Convenience wrapper around
+// defaultCache.Get with context.Background.
 func Load(dim, bitWidth int) (*Codebook, error) {
-	key := cacheKey(dim, bitWidth)
+	return defaultCache.Get(context.Background(), dim, bitWidth)
+}
 
-	// Fast path: check cache under read lock.
-	cacheMu.RLock()
-	if cb, ok := cache[key]; ok {
-		cacheMu.RUnlock()
-		return cb, nil
-	}
-	cacheMu.RUnlock()
-
-	// Slow path: acquire write lock and re-check before loading.
-	cacheMu.Lock()
-	if cb, ok := cache[key]; ok {
-		cacheMu.Unlock()
-		return cb, nil
-	}
-	cacheMu.Unlock()
-
-	// Load outside the lock to avoid holding it during I/O.
-	cb, err := loadPrecomputed(dim, bitWidth)
-	if err != nil {
-		cb, err = Generate(context.Background(), dim, bitWidth)
-		if err != nil {
-			return nil, fmt.Errorf("codebook: failed to generate d=%d b=%d: %w", dim, bitWidth, err)
-		}
-	}
-
-	// Store under write lock; re-check in case another goroutine won the race.
-	cacheMu.Lock()
-	if existing, ok := cache[key]; ok {
-		cacheMu.Unlock()
-		return existing, nil
-	}
-	cache[key] = cb
-	cacheMu.Unlock()
-	return cb, nil
+// LoadCtx is like Load but accepts a context, used for any on-the-fly
+// Lloyd-Max generation triggered by a cache miss.
+func LoadCtx(ctx context.Context, dim, bitWidth int) (*Codebook, error) {
+	return defaultCache.Get(ctx, dim, bitWidth)
 }
 
 // Generate creates a new codebook using Lloyd-Max for the given dim and bitWidth.
 // The context allows callers to cancel or time out the generation.
 func Generate(ctx context.Context, dim, bitWidth int) (*Codebook, error) {
-	density := DensityForDim(dim)
+	density, err := DensityForDim(dim)
+	if err != nil {
+		return nil, fmt.Errorf("codebook: density for d=%d: %w", dim, err)
+	}
 	cfg := DefaultLloydMaxConfig(density, bitWidth)
 	result, err := SolveLloydMax(ctx, cfg)
 	if err != nil {
@@ -99,9 +68,8 @@ func loadPrecomputed(dim, bitWidth int) (*Codebook, error) {
 	return NewCodebook(entry.Dim, entry.BitWidth, entry.Centroids)
 }
 
-// ClearCache removes all cached codebooks. Useful in tests.
+// ClearCache evicts all entries from the package-level default cache.
+// Useful in tests; for isolated caches, use Cache.Clear directly.
 func ClearCache() {
-	cacheMu.Lock()
-	cache = make(map[string]*Codebook)
-	cacheMu.Unlock()
+	defaultCache.Clear()
 }

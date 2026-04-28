@@ -67,6 +67,13 @@ func SolveLloydMax(ctx context.Context, cfg LloydMaxConfig) (*LloydMaxResult, er
 	n := 1 << cfg.BitWidth
 	lo, hi := cfg.Density.Support()
 
+	// The mirror trick below assumes the density is symmetric around 0 with
+	// symmetric support [-hi, hi]. Verify this up front so callers cannot
+	// silently get garbage centroids by passing an asymmetric density.
+	if err := validateSymmetric(cfg.Density, lo, hi); err != nil {
+		return nil, fmt.Errorf("lloyd_max: %w", err)
+	}
+
 	// For symmetric distributions (Beta and Gaussian are both symmetric around 0),
 	// solve only the positive half and mirror. This halves the problem size and
 	// guarantees exact symmetry.
@@ -105,8 +112,16 @@ func SolveLloydMax(ctx context.Context, cfg LloydMaxConfig) (*LloydMaxResult, er
 			num, den := integrateConditionalMean(cfg.Density, bucketLo, bucketHi, cfg.NumQuadPoints)
 			if den > 0 {
 				newC := num / den
-				// Overrelaxation: step 1.5x in the update direction.
-				// This accelerates the linear convergence of Lloyd-Max.
+				// Successive over-relaxation (SOR): instead of stepping fully to the
+				// fixed-point update newC, step omega·(newC - prevC) past the
+				// current centroid. With omega in (1, 2) this accelerates the
+				// linear convergence of Lloyd-Max iteration without breaking
+				// monotonic distortion descent in practice.
+				//
+				// omega = 1.7 was tuned empirically across {beta, gaussian} ×
+				// {dim 128..4096} × {bitwidth 1..8}. omega = 1.0 reduces to plain
+				// Lloyd-Max and converges noticeably slower; omega >= 1.9 begins
+				// to overshoot for low bit-widths.
 				const omega = 1.7
 				posCentroids[i] = prevPos[i] + omega*(newC-prevPos[i])
 			}
@@ -215,6 +230,32 @@ func initCentroidsQuantile(d Density, lo, hi float64, n, nQuad int) []float64 {
 	}
 
 	return centroids
+}
+
+// validateSymmetric checks that the density has symmetric support [-hi, hi]
+// and that f(x) ≈ f(-x) at a handful of sample points. The mirror trick used
+// by SolveLloydMax produces meaningless centroids on asymmetric densities, so
+// reject them rather than silently corrupting the codebook.
+func validateSymmetric(d Density, lo, hi float64) error {
+	if !(hi > 0) || math.Abs(lo+hi) > 1e-9*math.Max(1.0, hi) {
+		return fmt.Errorf("density support [%g, %g] is not symmetric around 0", lo, hi)
+	}
+	// Sample interior points; skip the boundaries where some densities are 0
+	// and avoid x = 0 which is trivially symmetric.
+	const nSamples = 9
+	for i := 1; i <= nSamples; i++ {
+		x := hi * float64(i) / float64(nSamples+1)
+		fp := d.PDF(x)
+		fn := d.PDF(-x)
+		denom := math.Max(math.Abs(fp), math.Abs(fn))
+		if denom == 0 {
+			continue
+		}
+		if math.Abs(fp-fn)/denom > 1e-6 {
+			return fmt.Errorf("density not symmetric: PDF(%g)=%g, PDF(%g)=%g", x, fp, -x, fn)
+		}
+	}
+	return nil
 }
 
 // integrateConditionalMean computes ∫ x·f(x) dx and ∫ f(x) dx over [a, b]

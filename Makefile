@@ -1,4 +1,4 @@
-.PHONY: build test lint fmt vet clean proto all cuda cuda-test cuda-clean
+.PHONY: build test lint fmt vet clean proto proto-lint proto-breaking all cuda cuda-test cuda-clean
 
 # Default target
 all: build test lint
@@ -60,6 +60,29 @@ proto:
 		cd api && buf generate; \
 	else \
 		echo "    buf not installed, skipping proto generation"; \
+	fi
+	@echo "==> Done."
+
+# Lint .proto files using buf's STANDARD lint rules.
+proto-lint:
+	@echo "==> Linting protobuf files..."
+	@if command -v buf >/dev/null 2>&1; then \
+		cd api && buf lint; \
+	else \
+		echo "    buf not installed, skipping proto lint"; exit 1; \
+	fi
+	@echo "==> Done."
+
+# Detect breaking changes in .proto files relative to the main branch.
+# Override the comparison target with PROTO_BREAKING_AGAINST=...; defaults to
+# the local main branch.
+PROTO_BREAKING_AGAINST ?= .git\#branch=main,subdir=api
+proto-breaking:
+	@echo "==> Checking protobuf for breaking changes against $(PROTO_BREAKING_AGAINST)..."
+	@if command -v buf >/dev/null 2>&1; then \
+		cd api && buf breaking --against '../$(PROTO_BREAKING_AGAINST)'; \
+	else \
+		echo "    buf not installed, skipping proto breaking check"; exit 1; \
 	fi
 	@echo "==> Done."
 

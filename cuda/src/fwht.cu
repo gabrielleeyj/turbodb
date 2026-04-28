@@ -21,10 +21,26 @@
 #include <cstdio>
 
 /* --------------------------------------------------------------------------
+ * Shared-memory bank-conflict avoidance.
+ *
+ * 4-byte shared memory has 32 banks on all CUDA GPUs since CC 2.0. The FWHT
+ * butterfly at stage `half` reads smem[i] and smem[i + half] simultaneously
+ * across a warp; whenever `half` is a multiple of 32 (32, 64, 128, ...) the
+ * two halves of the pair land in the same bank, producing 2-way bank
+ * conflicts that double the load latency.
+ *
+ * Standard fix: pad the index by `i / 32`, i.e. add one slot every 32
+ * elements. This shifts banks so that adjacent stride-32 accesses land in
+ * different banks. The smem footprint grows by ~3.1% — well within budget.
+ * -------------------------------------------------------------------------- */
+#define FWHT_PAD(i) ((i) + ((i) >> 5))
+#define FWHT_PADDED_SIZE(d) ((d) + ((d) >> 5))
+
+/* --------------------------------------------------------------------------
  * Shared-memory FWHT butterfly kernel
  *
  * Each block processes one vector. d must be a power of 2 and fit in
- * shared memory (d <= 4096 for 16KB shared mem at float32).
+ * shared memory (d <= 4096 with ~17KB shared mem at float32 after padding).
  * -------------------------------------------------------------------------- */
 
 __global__ void fwht_forward_kernel(const float* __restrict__ input,
@@ -40,7 +56,7 @@ __global__ void fwht_forward_kernel(const float* __restrict__ input,
 
     /* Load into shared memory with first sign flip (S1). */
     for (int i = tid; i < d; i += blockDim.x) {
-        smem[i] = vec_in[i] * signs[i];
+        smem[FWHT_PAD(i)] = vec_in[i] * signs[i];
     }
     __syncthreads();
 
@@ -59,17 +75,17 @@ __global__ void fwht_forward_kernel(const float* __restrict__ input,
             int i = block_id * block_size + offset;
             int j = i + half;
 
-            float a = smem[i];
-            float b = smem[j];
-            smem[i] = a + b;
-            smem[j] = a - b;
+            float a = smem[FWHT_PAD(i)];
+            float b = smem[FWHT_PAD(j)];
+            smem[FWHT_PAD(i)] = a + b;
+            smem[FWHT_PAD(j)] = a - b;
         }
         __syncthreads();
     }
 
     /* Apply second sign flip (S2) and write output. */
     for (int i = tid; i < d; i += blockDim.x) {
-        vec_out[i] = smem[i] * signs[i];
+        vec_out[i] = smem[FWHT_PAD(i)] * signs[i];
     }
 }
 
@@ -89,7 +105,7 @@ __global__ void fwht_inverse_kernel(const float* __restrict__ input,
 
     /* Load with S2 sign flip. */
     for (int i = tid; i < d; i += blockDim.x) {
-        smem[i] = vec_in[i] * signs[i];
+        smem[FWHT_PAD(i)] = vec_in[i] * signs[i];
     }
     __syncthreads();
 
@@ -104,17 +120,17 @@ __global__ void fwht_inverse_kernel(const float* __restrict__ input,
             int i = block_id * block_size + offset;
             int j = i + half;
 
-            float a = smem[i];
-            float b = smem[j];
-            smem[i] = a + b;
-            smem[j] = a - b;
+            float a = smem[FWHT_PAD(i)];
+            float b = smem[FWHT_PAD(j)];
+            smem[FWHT_PAD(i)] = a + b;
+            smem[FWHT_PAD(j)] = a - b;
         }
         __syncthreads();
     }
 
     /* Apply S1 sign flip and 1/d scaling. */
     for (int i = tid; i < d; i += blockDim.x) {
-        vec_out[i] = smem[i] * signs[i] * scale;
+        vec_out[i] = smem[FWHT_PAD(i)] * signs[i] * scale;
     }
 }
 
@@ -211,7 +227,7 @@ tq_status_t tq_fwht_batch(tq_context_t ctx,
     if (d <= MAX_SMEM_FLOATS) {
         /* Small-d path: one block per vector, butterfly in shared memory. */
         int threads = (d < TQ_BLOCK_SIZE) ? d : TQ_BLOCK_SIZE;
-        size_t smem_bytes = d * sizeof(float);
+        size_t smem_bytes = (size_t)FWHT_PADDED_SIZE(d) * sizeof(float);
 
         fwht_forward_kernel<<<n, threads, smem_bytes, stream>>>(
             vectors_d, output_d, rot->signs_d, d);
@@ -264,7 +280,7 @@ tq_status_t tq_fwht_inverse_batch(tq_context_t ctx,
 
     if (d <= MAX_SMEM_FLOATS) {
         int threads = (d < TQ_BLOCK_SIZE) ? d : TQ_BLOCK_SIZE;
-        size_t smem_bytes = d * sizeof(float);
+        size_t smem_bytes = (size_t)FWHT_PADDED_SIZE(d) * sizeof(float);
 
         fwht_inverse_kernel<<<n, threads, smem_bytes, stream>>>(
             vectors_d, output_d, rot->signs_d, d);

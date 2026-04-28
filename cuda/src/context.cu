@@ -172,12 +172,30 @@ int tq_get_device_id(tq_context_t ctx) {
     return ctx ? ctx->device_id : -1;
 }
 
-/* Lazily create and cache a cuBLAS handle, bound to the context's stream. */
+/* Lazily create and cache a cuBLAS handle, bound to the context's stream.
+ *
+ * TF32 (Ampere+) is enabled for SGEMM via CUBLAS_TF32_TENSOR_OP_MATH so that
+ * float32 GEMMs go through the tensor cores at TF32 precision. For TurboQuant
+ * inner-product / search workloads, TF32's ~10-bit mantissa is well beyond
+ * the bit-width quantization noise floor (b in 1..8), so the loss in numeric
+ * precision is dominated by quantization error and not user-visible. On
+ * pre-Ampere devices the math mode is silently ignored.
+ *
+ * cuBLAS still reports CUBLAS_STATUS_NOT_SUPPORTED on very old CUDA versions
+ * for the TF32 math mode token; we treat that as benign and fall back to the
+ * default math mode rather than failing handle initialization.
+ */
 cublasHandle_t tq_get_cublas(tq_context_t ctx) {
     if (ctx == nullptr) return nullptr;
     if (ctx->cublas == nullptr) {
-        cublasCreate(&ctx->cublas);
+        if (cublasCreate(&ctx->cublas) != CUBLAS_STATUS_SUCCESS) {
+            ctx->cublas = nullptr;
+            return nullptr;
+        }
         cublasSetStream(ctx->cublas, ctx->stream);
+        /* Best-effort: enable TF32 tensor-core SGEMM. Older cuBLAS that does
+         * not understand the enum just leaves math mode at default. */
+        (void)cublasSetMathMode(ctx->cublas, CUBLAS_TF32_TENSOR_OP_MATH);
     }
     return ctx->cublas;
 }

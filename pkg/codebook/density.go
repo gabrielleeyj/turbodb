@@ -1,6 +1,9 @@
 package codebook
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Density represents a probability density function over the reals.
 type Density interface {
@@ -23,10 +26,10 @@ type BetaDensity struct {
 }
 
 // NewBetaDensity creates a BetaDensity for dimension d.
-// Panics if d < 2.
-func NewBetaDensity(d int) *BetaDensity {
+// Returns an error if d < 2.
+func NewBetaDensity(d int) (*BetaDensity, error) {
 	if d < 2 {
-		panic("codebook: BetaDensity requires d >= 2")
+		return nil, fmt.Errorf("codebook: BetaDensity requires d >= 2, got %d", d)
 	}
 	// Use log-gamma to avoid overflow for large d.
 	lgD2, _ := math.Lgamma(float64(d) / 2.0)
@@ -36,7 +39,7 @@ func NewBetaDensity(d int) *BetaDensity {
 		dim:   d,
 		coeff: coeff,
 		dExp:  float64(d-3) / 2.0,
-	}
+	}, nil
 }
 
 // PDF returns the probability density at x for the Beta distribution.
@@ -62,9 +65,10 @@ type GaussianDensity struct {
 }
 
 // NewGaussianDensity creates a Gaussian density N(0, 1/d).
-func NewGaussianDensity(d int) *GaussianDensity {
+// Returns an error if d < 1.
+func NewGaussianDensity(d int) (*GaussianDensity, error) {
 	if d < 1 {
-		panic("codebook: GaussianDensity requires d >= 1")
+		return nil, fmt.Errorf("codebook: GaussianDensity requires d >= 1, got %d", d)
 	}
 	sigma := 1.0 / math.Sqrt(float64(d))
 	return &GaussianDensity{
@@ -72,7 +76,7 @@ func NewGaussianDensity(d int) *GaussianDensity {
 		sigma:  sigma,
 		coeff:  1.0 / (sigma * math.Sqrt(2.0*math.Pi)),
 		invVar: float64(d) / 2.0,
-	}
+	}, nil
 }
 
 // PDF returns the probability density at x for the Gaussian distribution.
@@ -89,7 +93,7 @@ func (g *GaussianDensity) Support() (float64, float64) {
 
 // DensityForDim returns the appropriate density for dimension d.
 // Uses GaussianDensity for d >= 256, BetaDensity otherwise.
-func DensityForDim(d int) Density {
+func DensityForDim(d int) (Density, error) {
 	if d >= 256 {
 		return NewGaussianDensity(d)
 	}
