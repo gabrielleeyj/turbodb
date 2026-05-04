@@ -231,6 +231,70 @@ func TestSearchPlannerOptions(t *testing.T) {
 	}
 }
 
+func TestEngineMemoryBudget(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Tiny seal threshold so we can drive a seal cheaply in tests, plus a
+	// generous budget that nonetheless tracks usage.
+	e, err := New(EngineConfig{
+		DataDir:           dir,
+		SealThreshold:     8,
+		MemoryBudgetBytes: 1 << 20, // 1 MiB
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	ctx := context.Background()
+
+	if err := e.CreateCollection(ctx, defaultCollection("budget")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Initially no sealed segments → no bytes pinned.
+	if got := e.MemoryStats(); got.UsedBytes != 0 {
+		t.Errorf("UsedBytes pre-seal = %d, want 0", got.UsedBytes)
+	}
+
+	rng := rand.New(rand.NewPCG(42, 43))
+	for i := range 8 {
+		if err := e.Insert(ctx, "budget", index.VectorEntry{ID: idOf(i), Values: randVec(rng, testDim)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Trigger seal of the now-full growing segment.
+	if err := e.Flush(ctx, "budget"); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := e.Stats("budget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.PinnedBytes <= 0 {
+		t.Errorf("CollectionStats.PinnedBytes = %d, want > 0 after seal", stats.PinnedBytes)
+	}
+
+	mem := e.MemoryStats()
+	if mem.UsedBytes != stats.PinnedBytes {
+		t.Errorf("MemoryStats.UsedBytes (%d) != CollectionStats.PinnedBytes (%d)", mem.UsedBytes, stats.PinnedBytes)
+	}
+	if mem.Unlimited {
+		t.Errorf("expected bounded budget, got Unlimited=true")
+	}
+	if mem.CapacityBytes != 1<<20 {
+		t.Errorf("CapacityBytes = %d, want %d", mem.CapacityBytes, 1<<20)
+	}
+
+	// Dropping the collection should release all pinned bytes back to the budget.
+	if err := e.DropCollection(ctx, "budget"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.MemoryStats().UsedBytes; got != 0 {
+		t.Errorf("UsedBytes after drop = %d, want 0", got)
+	}
+}
+
 func TestErrorMapping(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t)

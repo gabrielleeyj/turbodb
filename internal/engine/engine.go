@@ -11,6 +11,7 @@ import (
 
 	"github.com/gabrielleeyj/turbodb/pkg/codebook"
 	"github.com/gabrielleeyj/turbodb/pkg/index"
+	"github.com/gabrielleeyj/turbodb/pkg/memory"
 	"github.com/gabrielleeyj/turbodb/pkg/rotation"
 	"github.com/gabrielleeyj/turbodb/pkg/search"
 	"github.com/gabrielleeyj/turbodb/pkg/wal"
@@ -29,7 +30,8 @@ type Engine struct {
 	cfg    EngineConfig
 	logger *slog.Logger
 
-	wal *wal.WAL
+	wal    *wal.WAL
+	budget *memory.Budget
 
 	mu          sync.RWMutex
 	collections map[string]*collectionState
@@ -70,6 +72,7 @@ func New(cfg EngineConfig) (*Engine, error) {
 	e := &Engine{
 		cfg:         cfg,
 		logger:      cfg.Logger,
+		budget:      memory.NewBudget(cfg.MemoryBudgetBytes),
 		collections: make(map[string]*collectionState),
 	}
 
@@ -303,6 +306,23 @@ func (e *Engine) Stats(collection string) (index.CollectionStats, error) {
 	return state.coll.Stats(), nil
 }
 
+// MemoryStats reports the engine-wide memory budget headline figures. A
+// Capacity of zero indicates the budget is unlimited (accounting only).
+type MemoryStats struct {
+	UsedBytes     int64
+	CapacityBytes int64
+	Unlimited     bool
+}
+
+// MemoryStats returns the engine-wide memory budget snapshot.
+func (e *Engine) MemoryStats() MemoryStats {
+	return MemoryStats{
+		UsedBytes:     e.budget.Used(),
+		CapacityBytes: e.budget.Capacity(),
+		Unlimited:     e.budget.Unlimited(),
+	}
+}
+
 // buildCollectionState constructs an in-memory collection from a config.
 func (e *Engine) buildCollectionState(cfg CollectionConfig) (*collectionState, error) {
 	rot, err := rotation.NewHadamardRotator(cfg.Dim, cfg.RotatorSeed)
@@ -324,6 +344,7 @@ func (e *Engine) buildCollectionState(cfg CollectionConfig) (*collectionState, e
 		SealThreshold: e.cfg.SealThreshold,
 		DataDir:       segmentsDir(e.cfg.DataDir),
 		Logger:        e.logger.With("collection", cfg.Name),
+		Budget:        e.budget,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("engine: collection: %w", err)

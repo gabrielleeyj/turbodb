@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gabrielleeyj/turbodb/pkg/codebook"
+	"github.com/gabrielleeyj/turbodb/pkg/memory"
 	"github.com/gabrielleeyj/turbodb/pkg/rotation"
 )
 
@@ -24,6 +25,10 @@ type CollectionConfig struct {
 	SealThreshold int    // Vectors per growing segment before auto-seal.
 	DataDir       string // Directory for persisted segment files.
 	Logger        *slog.Logger
+	// Budget is an optional engine-wide memory budget. When set, sealed
+	// segments acquire their estimated byte cost on creation and release on
+	// Close. Nil means unbounded.
+	Budget *memory.Budget
 }
 
 // Collection manages the lifecycle of segments for a single logical index.
@@ -46,6 +51,10 @@ type Collection struct {
 	dataDir       string
 	segCounter    int
 	logger        *slog.Logger
+
+	budget        *memory.Budget
+	pinnedBytes   int64 // bytes acquired from budget by this collection's sealed segments
+	pinnedSegSize map[string]int64
 
 	// Sealing coordination.
 	sealCh   chan sealRequest
@@ -98,6 +107,8 @@ func NewCollection(cfg CollectionConfig) (*Collection, error) {
 		dataDir:       cfg.DataDir,
 		logger:        logger,
 		sealCh:        make(chan sealRequest, 4),
+		budget:        cfg.Budget,
+		pinnedSegSize: make(map[string]int64),
 	}
 
 	// Create initial growing segment.
@@ -277,6 +288,7 @@ func (c *Collection) Stats() CollectionStats {
 	for _, s := range c.sealed {
 		totalVectors += s.Count()
 	}
+	pinnedBytes := c.pinnedBytes
 	c.mu.RUnlock()
 
 	return CollectionStats{
@@ -284,6 +296,7 @@ func (c *Collection) Stats() CollectionStats {
 		GrowingSegmentCount: 1,
 		SealedSegmentCount:  sealedCount,
 		TombstoneCount:      c.tombstones.Count(),
+		PinnedBytes:         pinnedBytes,
 	}
 }
 
@@ -293,6 +306,9 @@ type CollectionStats struct {
 	GrowingSegmentCount int
 	SealedSegmentCount  int
 	TombstoneCount      int
+	// PinnedBytes is the byte cost currently held against the engine's
+	// memory budget by this collection's sealed segments.
+	PinnedBytes int64
 }
 
 // Flush forces sealing of the current growing segment (even if below threshold)
@@ -321,10 +337,21 @@ func (c *Collection) Flush() error {
 	return <-done
 }
 
-// Close stops the background sealer and releases resources.
+// Close stops the background sealer and releases resources, including any
+// memory budget held by sealed segments.
 func (c *Collection) Close() error {
 	c.cancelF()
 	c.wg.Wait()
+
+	c.mu.Lock()
+	if c.budget != nil {
+		for _, n := range c.pinnedSegSize {
+			c.budget.Release(n)
+		}
+	}
+	c.pinnedSegSize = nil
+	c.pinnedBytes = 0
+	c.mu.Unlock()
 	return nil
 }
 
@@ -350,6 +377,16 @@ func (c *Collection) sealSegment(g *GrowingSegment) error {
 		return nil
 	}
 
+	// Reserve memory budget for the soon-to-be-sealed segment before doing
+	// the expensive quantization work. If the budget is exhausted the seal
+	// fails fast rather than producing data we cannot host.
+	estBytes := memory.EstimateSegmentBytes(len(entries), c.dim, c.bitWidth)
+	if c.budget != nil && estBytes > 0 {
+		if err := c.budget.Acquire(context.Background(), estBytes); err != nil {
+			return fmt.Errorf("seal segment %s: budget acquire: %w", g.ID(), err)
+		}
+	}
+
 	sealed, err := Seal(g.ID(), entries, SealedSegmentConfig{
 		ID:       g.ID(),
 		Dim:      c.dim,
@@ -358,16 +395,24 @@ func (c *Collection) sealSegment(g *GrowingSegment) error {
 		Codebook: c.cb,
 	})
 	if err != nil {
+		if c.budget != nil && estBytes > 0 {
+			c.budget.Release(estBytes)
+		}
 		return fmt.Errorf("seal segment %s: %w", g.ID(), err)
 	}
 
 	c.mu.Lock()
 	c.sealed = append(c.sealed, sealed)
+	if estBytes > 0 {
+		c.pinnedSegSize[sealed.ID()] = estBytes
+		c.pinnedBytes += estBytes
+	}
 	c.mu.Unlock()
 
 	c.logger.Info("segment sealed",
 		"segment", g.ID(),
 		"vectors", sealed.Count(),
+		"bytes_pinned", estBytes,
 		"duration", time.Since(start),
 	)
 	return nil

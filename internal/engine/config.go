@@ -70,6 +70,10 @@ type EngineConfig struct {
 	// SealThreshold is the number of vectors per growing segment before auto-seal.
 	// Defaults to index.DefaultSealThreshold (1M).
 	SealThreshold int
+	// MemoryBudgetBytes caps the resident bytes pinned by sealed segments
+	// across all collections. Zero (the default) means unlimited — sealed
+	// segments still report their byte cost via stats but never block.
+	MemoryBudgetBytes int64
 	// Logger receives operational logs. Defaults to slog.Default().
 	Logger *slog.Logger
 }

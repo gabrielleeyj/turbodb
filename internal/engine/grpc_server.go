@@ -248,6 +248,7 @@ func collectionStatsToProto(s index.CollectionStats) *apiv1.CollectionStats {
 		VectorCount:         int64(s.VectorCount),
 		SealedSegmentCount:  int32(s.SealedSegmentCount),
 		GrowingSegmentCount: int32(s.GrowingSegmentCount),
+		HostMemoryBytes:     s.PinnedBytes,
 	}
 }
 
