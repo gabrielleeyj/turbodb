@@ -22,8 +22,8 @@ Scope of work planned in phases.
 Component                  | Location              | Language | Status
 ---------------------------|-----------------------|----------|--------
 Core TurboQuant Library    | pkg/                  | Go       | Done
-CUDA Kernel Layer          | cuda/, internal/cuda/ | CUDA/Go  | Phase 2
-Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3
+CUDA Kernel Layer          | cuda/, internal/cuda/ | CUDA/Go  | Partially Complete
+Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | In Progress (Phase 3)
 PostgreSQL Extension       | postgres/             | C/Go     | Phase 5
 Format Support             | pkg/formats/          | Go       | Phase 4
 KV Cache Plugin            | python/               | Python   | Phase 4
@@ -68,7 +68,14 @@ the MSE codes to provide unbiased inner-product estimates.
 - `pkg/rotation`: Randomized FWHT via HadamardRotator, O(d log d), ~9µs/vector at d=1536
 - `pkg/quantizer`: MSEQuantizer (Algorithm 1), ProdQuantizer (Algorithm 2), QJL sketch, batch/streaming APIs
 
-**Next:** Phase 2 — CUDA kernel layer.
+**Phase 2 partially complete** — CUDA kernel layer code written, GPU parity testing pending.
+
+- CUDA kernels: `cuda/src/{fwht,quantize,qjl,search,codebook,context}.cu` with C ABI in `cuda/include/turboquant.h`
+- Go cgo bindings: `internal/cuda/` builds cleanly with and without the `cuda` build tag
+- 65 Go tests passing on CPU; GoogleTest suites for FWHT and quantize round-trips written
+- **Pending:** GPU parity validation requires a CUDA machine / CI runner
+
+**Next:** Phase 3 — Standalone GPU engine (`cmd/turbodb-engine/`).
 
 ## Quickstart
 
