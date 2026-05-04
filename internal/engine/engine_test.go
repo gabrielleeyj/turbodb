@@ -12,6 +12,7 @@ import (
 
 	apiv1 "github.com/gabrielleeyj/turbodb/api/v1"
 	"github.com/gabrielleeyj/turbodb/pkg/index"
+	"github.com/gabrielleeyj/turbodb/pkg/search"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -113,7 +114,7 @@ func TestInsertSearchDelete(t *testing.T) {
 	// Search using the first inserted vector — it should appear at top.
 	rng2 := rand.New(rand.NewPCG(7, 11))
 	query := randVec(rng2, testDim)
-	results, err := e.Search(ctx, "c", query, 5)
+	results, plan, err := e.Search(ctx, "c", query, search.Options{TopK: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,12 +124,15 @@ func TestInsertSearchDelete(t *testing.T) {
 	if results[0].ID != idOf(0) {
 		t.Errorf("top result id = %q, want %q", results[0].ID, idOf(0))
 	}
+	if plan.EffectiveTopK != 5 {
+		t.Errorf("plan.EffectiveTopK = %d, want 5", plan.EffectiveTopK)
+	}
 
 	// Delete the top result and verify it's gone.
 	if err := e.Delete(ctx, "c", idOf(0)); err != nil {
 		t.Fatal(err)
 	}
-	results, err = e.Search(ctx, "c", query, 5)
+	results, _, err = e.Search(ctx, "c", query, search.Options{TopK: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,13 +187,57 @@ func TestRecoveryReplaysWAL(t *testing.T) {
 	}
 }
 
+func TestSearchPlannerOptions(t *testing.T) {
+	t.Parallel()
+	e := newTestEngine(t)
+	ctx := context.Background()
+
+	if err := e.CreateCollection(ctx, defaultCollection("p")); err != nil {
+		t.Fatal(err)
+	}
+	rng := rand.New(rand.NewPCG(3, 5))
+	for i := range 60 {
+		if err := e.Insert(ctx, "p", index.VectorEntry{ID: idOf(i), Values: randVec(rng, testDim)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Invalid options bubble up from the planner.
+	if _, _, err := e.Search(ctx, "p", make([]float32, testDim), search.Options{TopK: 0}); err == nil {
+		t.Errorf("expected error for top_k=0")
+	}
+
+	// Oversearch widens the per-segment candidate pool.
+	rng2 := rand.New(rand.NewPCG(3, 5))
+	q := randVec(rng2, testDim)
+	_, plan, err := e.Search(ctx, "p", q, search.Options{TopK: 5, OversearchFactor: 3.0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.EffectiveTopK != 15 {
+		t.Errorf("plan.EffectiveTopK = %d, want 15", plan.EffectiveTopK)
+	}
+	if plan.SegmentsSearched < 1 {
+		t.Errorf("plan.SegmentsSearched = %d, want >= 1", plan.SegmentsSearched)
+	}
+
+	// Rerank without a configured reranker is a no-op.
+	_, plan, err = e.Search(ctx, "p", q, search.Options{TopK: 3, Rerank: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Reranked {
+		t.Errorf("plan.Reranked = true with no reranker configured")
+	}
+}
+
 func TestErrorMapping(t *testing.T) {
 	t.Parallel()
 	e := newTestEngine(t)
 	ctx := context.Background()
 
 	// Search nonexistent collection.
-	_, err := e.Search(ctx, "missing", []float32{1, 2, 3}, 1)
+	_, _, err := e.Search(ctx, "missing", []float32{1, 2, 3}, search.Options{TopK: 1})
 	if !errors.Is(err, ErrCollectionNotFound) {
 		t.Errorf("expected ErrCollectionNotFound, got %v", err)
 	}

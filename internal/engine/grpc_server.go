@@ -9,6 +9,7 @@ import (
 
 	apiv1 "github.com/gabrielleeyj/turbodb/api/v1"
 	"github.com/gabrielleeyj/turbodb/pkg/index"
+	"github.com/gabrielleeyj/turbodb/pkg/search"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -133,7 +134,8 @@ func (s *GRPCServer) Delete(ctx context.Context, req *apiv1.DeleteRequest) (*api
 // Search runs a similarity query.
 func (s *GRPCServer) Search(ctx context.Context, req *apiv1.SearchRequest) (*apiv1.SearchResponse, error) {
 	start := time.Now()
-	results, err := s.engine.Search(ctx, req.GetCollection(), req.GetQuery(), int(req.GetTopK()))
+	opts := searchOptionsFromProto(req)
+	results, _, err := s.engine.Search(ctx, req.GetCollection(), req.GetQuery(), opts)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -148,7 +150,8 @@ func (s *GRPCServer) SearchBatch(req *apiv1.SearchBatchRequest, stream apiv1.Tur
 	ctx := stream.Context()
 	for _, q := range req.GetQueries() {
 		start := time.Now()
-		results, err := s.engine.Search(ctx, q.GetCollection(), q.GetQuery(), int(q.GetTopK()))
+		opts := searchOptionsFromProto(q)
+		results, _, err := s.engine.Search(ctx, q.GetCollection(), q.GetQuery(), opts)
 		if err != nil {
 			return mapError(err)
 		}
@@ -161,6 +164,17 @@ func (s *GRPCServer) SearchBatch(req *apiv1.SearchBatchRequest, stream apiv1.Tur
 		}
 	}
 	return nil
+}
+
+// searchOptionsFromProto translates the proto SearchRequest knobs into the
+// planner's Options. Validation is left to the planner.
+func searchOptionsFromProto(req *apiv1.SearchRequest) search.Options {
+	return search.Options{
+		TopK:     int(req.GetTopK()),
+		Rerank:   req.GetRerank(),
+		Exact:    req.GetExact(),
+		EfSearch: int(req.GetEfSearch()),
+	}
 }
 
 // Flush forces a segment seal in a collection.

@@ -12,6 +12,7 @@ import (
 	"github.com/gabrielleeyj/turbodb/pkg/codebook"
 	"github.com/gabrielleeyj/turbodb/pkg/index"
 	"github.com/gabrielleeyj/turbodb/pkg/rotation"
+	"github.com/gabrielleeyj/turbodb/pkg/search"
 	"github.com/gabrielleeyj/turbodb/pkg/wal"
 )
 
@@ -38,10 +39,11 @@ type Engine struct {
 // collectionState bundles a Collection with the components needed to recreate
 // or recover it.
 type collectionState struct {
-	config CollectionConfig
-	coll   *index.Collection
-	rot    rotation.Rotator
-	cb     *codebook.Codebook
+	config  CollectionConfig
+	coll    *index.Collection
+	planner *search.Planner
+	rot     rotation.Rotator
+	cb      *codebook.Codebook
 }
 
 // New opens or creates an Engine rooted at cfg.DataDir.
@@ -263,25 +265,20 @@ func (e *Engine) Delete(ctx context.Context, collection, id string) error {
 	return state.coll.Delete(id)
 }
 
-// Search returns the top-K most similar vectors to query.
-func (e *Engine) Search(ctx context.Context, collection string, query []float32, topK int) ([]index.SearchResult, error) {
-	if topK < 1 || topK > 1000 {
-		return nil, fmt.Errorf("engine: search: top_k must be 1..1000, got %d", topK)
-	}
+// Search returns the top-K most similar vectors to query along with a Plan
+// describing how the planner executed.
+func (e *Engine) Search(ctx context.Context, collection string, query []float32, opts search.Options) ([]index.SearchResult, search.Plan, error) {
 	if err := validateValues(query); err != nil {
-		return nil, fmt.Errorf("engine: search: %w", err)
+		return nil, search.Plan{}, fmt.Errorf("engine: search: %w", err)
 	}
 
 	e.mu.RLock()
 	state, ok := e.collections[collection]
 	e.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
+		return nil, search.Plan{}, fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
 	}
-	if len(query) != state.config.Dim {
-		return nil, fmt.Errorf("engine: search: expected dim %d, got %d", state.config.Dim, len(query))
-	}
-	return state.coll.Search(query, topK)
+	return state.planner.Run(ctx, query, opts)
 }
 
 // Flush forces sealing of the active growing segment in the named collection.
@@ -332,7 +329,13 @@ func (e *Engine) buildCollectionState(cfg CollectionConfig) (*collectionState, e
 		return nil, fmt.Errorf("engine: collection: %w", err)
 	}
 
-	return &collectionState{config: cfg, coll: coll, rot: rot, cb: cb}, nil
+	planner, err := search.NewPlanner(coll, nil)
+	if err != nil {
+		_ = coll.Close()
+		return nil, fmt.Errorf("engine: planner: %w", err)
+	}
+
+	return &collectionState{config: cfg, coll: coll, planner: planner, rot: rot, cb: cb}, nil
 }
 
 // validateValues checks that a vector contains no NaN/Inf entries.
