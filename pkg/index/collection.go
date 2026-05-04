@@ -29,6 +29,9 @@ type CollectionConfig struct {
 	// segments acquire their estimated byte cost on creation and release on
 	// Close. Nil means unbounded.
 	Budget *memory.Budget
+	// OnSealed, when non-nil, is invoked after each successful seal — auto
+	// or via Flush. Used for telemetry; must not block.
+	OnSealed func(segmentID string, vectors int, pinnedBytes int64)
 }
 
 // Collection manages the lifecycle of segments for a single logical index.
@@ -55,6 +58,7 @@ type Collection struct {
 	budget        *memory.Budget
 	pinnedBytes   int64 // bytes acquired from budget by this collection's sealed segments
 	pinnedSegSize map[string]int64
+	onSealed      func(segmentID string, vectors int, pinnedBytes int64)
 
 	// Sealing coordination.
 	sealCh   chan sealRequest
@@ -109,6 +113,7 @@ func NewCollection(cfg CollectionConfig) (*Collection, error) {
 		sealCh:        make(chan sealRequest, 4),
 		budget:        cfg.Budget,
 		pinnedSegSize: make(map[string]int64),
+		onSealed:      cfg.OnSealed,
 	}
 
 	// Create initial growing segment.
@@ -415,6 +420,9 @@ func (c *Collection) sealSegment(g *GrowingSegment) error {
 		"bytes_pinned", estBytes,
 		"duration", time.Since(start),
 	)
+	if c.onSealed != nil {
+		c.onSealed(sealed.ID(), sealed.Count(), estBytes)
+	}
 	return nil
 }
 

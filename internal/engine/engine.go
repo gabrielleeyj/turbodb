@@ -8,13 +8,19 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gabrielleeyj/turbodb/pkg/codebook"
 	"github.com/gabrielleeyj/turbodb/pkg/index"
 	"github.com/gabrielleeyj/turbodb/pkg/memory"
 	"github.com/gabrielleeyj/turbodb/pkg/rotation"
 	"github.com/gabrielleeyj/turbodb/pkg/search"
+	"github.com/gabrielleeyj/turbodb/pkg/telemetry"
 	"github.com/gabrielleeyj/turbodb/pkg/wal"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ErrCollectionNotFound is returned when a referenced collection does not exist.
@@ -27,8 +33,10 @@ var ErrCollectionExists = errors.New("engine: collection already exists")
 // Engine coordinates collections, the write-ahead log, and persisted state.
 // It is safe for concurrent use.
 type Engine struct {
-	cfg    EngineConfig
-	logger *slog.Logger
+	cfg     EngineConfig
+	logger  *slog.Logger
+	metrics atomic.Pointer[telemetry.Metrics]
+	tracer  trace.Tracer
 
 	wal    *wal.WAL
 	budget *memory.Budget
@@ -36,6 +44,10 @@ type Engine struct {
 	mu          sync.RWMutex
 	collections map[string]*collectionState
 	closed      bool
+
+	// segmentsSealedTotal counts seal completions over the engine's lifetime.
+	// Sampled by the Prometheus stats source.
+	segmentsSealedTotal atomic.Uint64
 }
 
 // collectionState bundles a Collection with the components needed to recreate
@@ -72,6 +84,7 @@ func New(cfg EngineConfig) (*Engine, error) {
 	e := &Engine{
 		cfg:         cfg,
 		logger:      cfg.Logger,
+		tracer:      telemetry.Tracer(),
 		budget:      memory.NewBudget(cfg.MemoryBudgetBytes),
 		collections: make(map[string]*collectionState),
 	}
@@ -93,8 +106,9 @@ func New(cfg EngineConfig) (*Engine, error) {
 	}
 
 	w, err := wal.Open(wal.Config{
-		Dir:    walDir(cfg.DataDir),
-		Logger: cfg.Logger,
+		Dir:           walDir(cfg.DataDir),
+		Logger:        cfg.Logger,
+		FsyncObserver: e.observeWALFsync,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("engine: open wal: %w", err)
@@ -242,7 +256,11 @@ func (e *Engine) Insert(ctx context.Context, collection string, entry index.Vect
 	if _, err := e.wal.Append(wal.OpInsert, payload); err != nil {
 		return fmt.Errorf("engine: wal append: %w", err)
 	}
-	return state.coll.Insert(entry)
+	if err := state.coll.Insert(entry); err != nil {
+		return err
+	}
+	e.metrics.Load().AddInserts(1)
+	return nil
 }
 
 // Delete tombstones a vector from the named collection.
@@ -271,7 +289,19 @@ func (e *Engine) Delete(ctx context.Context, collection, id string) error {
 // Search returns the top-K most similar vectors to query along with a Plan
 // describing how the planner executed.
 func (e *Engine) Search(ctx context.Context, collection string, query []float32, opts search.Options) ([]index.SearchResult, search.Plan, error) {
+	ctx, span := e.tracer.Start(ctx, "engine.Search",
+		trace.WithAttributes(
+			attribute.String("collection", collection),
+			attribute.Int("top_k", opts.TopK),
+			attribute.Bool("rerank", opts.Rerank),
+			attribute.Bool("exact", opts.Exact),
+		),
+	)
+	defer span.End()
+	start := time.Now()
+
 	if err := validateValues(query); err != nil {
+		span.SetStatus(codes.Error, err.Error())
 		return nil, search.Plan{}, fmt.Errorf("engine: search: %w", err)
 	}
 
@@ -279,9 +309,25 @@ func (e *Engine) Search(ctx context.Context, collection string, query []float32,
 	state, ok := e.collections[collection]
 	e.mu.RUnlock()
 	if !ok {
-		return nil, search.Plan{}, fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
+		err := fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
+		span.SetStatus(codes.Error, "collection not found")
+		return nil, search.Plan{}, err
 	}
-	return state.planner.Run(ctx, query, opts)
+
+	results, plan, err := state.planner.Run(ctx, query, opts)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return results, plan, err
+	}
+	span.SetAttributes(
+		attribute.Int("plan.segments_searched", plan.SegmentsSearched),
+		attribute.Int("plan.candidates_considered", plan.CandidatesConsidered),
+		attribute.Int("plan.effective_top_k", plan.EffectiveTopK),
+		attribute.Bool("plan.reranked", plan.Reranked),
+	)
+	e.metrics.Load().ObserveSearchLatency(time.Since(start).Seconds())
+	return results, plan, nil
 }
 
 // Flush forces sealing of the active growing segment in the named collection.
@@ -345,6 +391,10 @@ func (e *Engine) buildCollectionState(cfg CollectionConfig) (*collectionState, e
 		DataDir:       segmentsDir(e.cfg.DataDir),
 		Logger:        e.logger.With("collection", cfg.Name),
 		Budget:        e.budget,
+		OnSealed: func(_ string, _ int, _ int64) {
+			e.segmentsSealedTotal.Add(1)
+			e.metrics.Load().IncSegmentsSealed()
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("engine: collection: %w", err)
@@ -374,6 +424,49 @@ func validateValues(values []float32) error {
 		}
 	}
 	return nil
+}
+
+// SegmentsActive reports the total growing+sealed segments across all
+// collections; satisfies telemetry.StatsSource.
+func (e *Engine) SegmentsActive() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	total := 0
+	for _, s := range e.collections {
+		st := s.coll.Stats()
+		total += st.GrowingSegmentCount + st.SealedSegmentCount
+	}
+	return total
+}
+
+// SegmentsSealedTotal reports the lifetime number of seal completions.
+// Satisfies telemetry.StatsSource.
+func (e *Engine) SegmentsSealedTotal() uint64 {
+	return e.segmentsSealedTotal.Load()
+}
+
+// HostMemoryBytes reports total host bytes pinned by sealed segments.
+// Satisfies telemetry.StatsSource.
+func (e *Engine) HostMemoryBytes() int64 {
+	return e.budget.Used()
+}
+
+// GPUMemoryBytes reports GPU bytes pinned. The CPU MVP returns zero;
+// kept here so the gauge wires up cleanly when the GPU path lands.
+func (e *Engine) GPUMemoryBytes() int64 { return 0 }
+
+// AttachMetrics installs the Prometheus metrics bundle. Safe to call
+// after construction so the engine can be passed as the StatsSource
+// when New(opts) is invoked. Passing nil detaches metrics.
+func (e *Engine) AttachMetrics(m *telemetry.Metrics) {
+	e.metrics.Store(m)
+}
+
+// observeWALFsync forwards each fsync latency to the attached Metrics.
+// Reads the atomic pointer so updates from AttachMetrics take effect
+// immediately without restarting the WAL.
+func (e *Engine) observeWALFsync(d time.Duration) {
+	e.metrics.Load().ObserveWALFsyncLatency(d.Seconds())
 }
 
 // validateVector checks the basic shape of a VectorEntry.

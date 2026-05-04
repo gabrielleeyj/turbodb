@@ -53,6 +53,9 @@ type Config struct {
 	GroupCommitInterval time.Duration
 	// Logger receives operational logs. Defaults to slog.Default().
 	Logger *slog.Logger
+	// FsyncObserver, when non-nil, is invoked after every fsync with the
+	// observed duration. Used for telemetry; must not block.
+	FsyncObserver func(d time.Duration)
 }
 
 // Default values.
@@ -66,11 +69,12 @@ const (
 // WAL is an append-only write-ahead log split across rotated files.
 // All exported methods are safe for concurrent use.
 type WAL struct {
-	dir          string
-	maxFileBytes int64
-	policy       FsyncPolicy
-	commitEvery  time.Duration
-	logger       *slog.Logger
+	dir           string
+	maxFileBytes  int64
+	policy        FsyncPolicy
+	commitEvery   time.Duration
+	logger        *slog.Logger
+	fsyncObserver func(d time.Duration)
 
 	mu       sync.Mutex
 	curFile  *os.File
@@ -115,11 +119,12 @@ func Open(cfg Config) (*WAL, error) {
 	}
 
 	w := &WAL{
-		dir:          cfg.Dir,
-		maxFileBytes: cfg.MaxFileBytes,
-		policy:       cfg.FsyncPolicy,
-		commitEvery:  cfg.GroupCommitInterval,
-		logger:       cfg.Logger,
+		dir:           cfg.Dir,
+		maxFileBytes:  cfg.MaxFileBytes,
+		policy:        cfg.FsyncPolicy,
+		commitEvery:   cfg.GroupCommitInterval,
+		logger:        cfg.Logger,
+		fsyncObserver: cfg.FsyncObserver,
 	}
 
 	files, err := listWALFiles(cfg.Dir)
@@ -354,10 +359,15 @@ func (w *WAL) flushAndSyncLocked() error {
 			return err
 		}
 	}
-	if w.curFile != nil {
-		return w.curFile.Sync()
+	if w.curFile == nil {
+		return nil
 	}
-	return nil
+	start := time.Now()
+	err := w.curFile.Sync()
+	if err == nil && w.fsyncObserver != nil {
+		w.fsyncObserver(time.Since(start))
+	}
+	return err
 }
 
 // groupCommitLoop fsyncs at commitEvery intervals and notifies waiters.
