@@ -23,7 +23,7 @@ Component                  | Location              | Language | Status
 ---------------------------|-----------------------|----------|--------
 Core TurboQuant Library    | pkg/                  | Go       | Done
 CUDA Kernel Layer          | cuda/, internal/cuda/ | CUDA/Go  | Partially Complete
-Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | In Progress (Phase 3)
+Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3 Complete
 PostgreSQL Extension       | postgres/             | C/Go     | Phase 5
 Format Support             | pkg/formats/          | Go       | Phase 4
 KV Cache Plugin            | python/               | Python   | Phase 4
@@ -75,7 +75,32 @@ the MSE codes to provide unbiased inner-product estimates.
 - 65 Go tests passing on CPU; GoogleTest suites for FWHT and quantize round-trips written
 - **Pending:** GPU parity validation requires a CUDA machine / CI runner
 
-**Next:** Phase 3 — Standalone GPU engine (`cmd/turbodb-engine/`).
+**Phase 3 complete** — Standalone GPU engine MVP.
+
+- Task 3.1 — segment architecture: `pkg/index/` provides Segment / GrowingSegment / SealedSegment / Collection with a background sealer, TombstoneLog, and a CRC32C-framed segment file format.
+- Task 3.2 — write-ahead log: `pkg/wal/` implements length-prefixed CRC32C records, typed payloads (Insert / Delete / SegmentSealed / Checkpoint), file rotation, FsyncEveryWrite + FsyncGroupCommit, LSN persistence across reopen, and tail-corruption-tolerant `Iterate()` recovery.
+- Task 3.3 — gRPC API: `cmd/turbodb-engine/` boots a gRPC listener; `internal/engine/` orchestrates collections, the WAL, and replay-on-start.
+- Task 3.4 — query planner: `pkg/search/` exposes `Options`/`Plan`/`Planner` on top of `*index.Collection` with oversearch, optional rerank, and per-call telemetry. `internal/engine.Search` returns a `(results, plan, error)` tuple; gRPC `SearchRequest` forwards `top_k`, `rerank`, `ef_search`, and `exact`.
+- Task 3.5 — memory management: `pkg/memory/` provides a semaphore-backed `Budget` (admission control + accounting) and a sealed-segment byte estimator. `EngineConfig.MemoryBudgetBytes` (0 = unlimited) flows into every collection; `CollectionStats.PinnedBytes` and `Engine.MemoryStats()` surface usage. Spill-to-NVMe and async prefetch deferred until on-disk segment loading lands.
+- Task 3.6 — observability: `pkg/telemetry/` exposes a Prometheus `Metrics` bundle (`turbodb_search_latency_seconds`, `_insert_throughput_vectors_total`, `_segments_sealed_total`, `_segments_active`, `_host_memory_bytes`, `_gpu_memory_bytes`, `_wal_fsync_latency_seconds`), an OTel tracer scope, and a `slog` logger factory. `Engine.AttachMetrics` resolves the engine ↔ StatsSource cycle via an `atomic.Pointer`. `cmd/turbodb-engine` exposes `/metrics` and `/healthz` on `--metrics-listen :9090` and accepts `--log-format json|text` and `--log-level`.
+
+**Phase 3 exit-criteria benchmark** — `cmd/turbodb-bench` loads N synthetic vectors, brute-forces ground truth, and reports recall@k plus p50/p95/p99 latency. First run on Apple M3 Pro (CPU only):
+
+| Criterion (SCOPE §17) | Target | Result |
+|---|---|---|
+| 100k-vector collection served | ✓ | 100k, 4-bit MSE, 15.6 MiB pinned |
+| Recall@10 | ≥ 0.95 | **1.0000** mean |
+| Search p99 | < 20 ms | **31 ms** (CPU MVP) |
+| Crash-recover | survives | recall preserved on close+reopen |
+
+Recall and recovery are met. The 20 ms p99 SLO is not reachable on a single core: the hot path is dequant + inner-product over the entire sealed segment, bandwidth-bound at this scale. Closing this gap is GPU-dispatch work — the kernels in `cuda/` are not yet wired into `pkg/index/sealed.go` Search.
+
+```bash
+go run ./cmd/turbodb-bench/ -vectors 100000 -queries 200 -dim 256 -bit-width 4 -top-k 10 -insert-workers 8 -oversearch 2.0
+go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
+```
+
+**Next:** wire CUDA dispatch into the sealed-segment search path, then Phase 4 (formats + Postgres FDW skeleton).
 
 ## Quickstart
 
