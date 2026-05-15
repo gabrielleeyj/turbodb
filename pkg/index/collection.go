@@ -305,6 +305,31 @@ func (c *Collection) Stats() CollectionStats {
 	}
 }
 
+// Snapshot returns all live vectors across the growing and sealed segments.
+// Growing-segment vectors are exact; sealed-segment vectors are reconstructed
+// from their quantized codes and therefore lossy. Tombstoned ids are excluded.
+// Intended for export and inspection.
+func (c *Collection) Snapshot() ([]VectorEntry, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var out []VectorEntry
+	for _, entry := range c.growing.Entries() {
+		if c.tombstones.IsDeleted(entry.ID) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	for _, s := range c.sealed {
+		entries, err := s.Reconstruct(c.tombstones)
+		if err != nil {
+			return nil, fmt.Errorf("collection snapshot: segment %s: %w", s.ID(), err)
+		}
+		out = append(out, entries...)
+	}
+	return out, nil
+}
+
 // CollectionStats holds statistics about a collection.
 type CollectionStats struct {
 	VectorCount         int

@@ -200,6 +200,24 @@ func (s *SealedSegment) Search(query []float32, topK int, tombstones *TombstoneL
 	return results, nil
 }
 
+// Reconstruct returns the approximate original vectors stored in this segment
+// by dequantizing each code. It is lossy (quantization error) and intended for
+// export/inspection, not exact recovery. Tombstoned ids are skipped.
+func (s *SealedSegment) Reconstruct(tombstones *TombstoneLog) ([]VectorEntry, error) {
+	out := make([]VectorEntry, 0, s.count)
+	for i := range s.count {
+		if tombstones != nil && tombstones.IsDeleted(s.ids[i]) {
+			continue
+		}
+		xHat, err := s.mseQ.Dequantize(s.codes[i])
+		if err != nil {
+			return nil, fmt.Errorf("sealed segment reconstruct: vector %d: %w", i, err)
+		}
+		out = append(out, VectorEntry{ID: s.ids[i], Values: xHat})
+	}
+	return out, nil
+}
+
 // Codes returns the quantized codes (used for persistence).
 func (s *SealedSegment) Codes() []quantizer.Code { return s.codes }
 

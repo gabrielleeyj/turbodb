@@ -227,6 +227,23 @@ func (e *Engine) DescribeCollection(name string) (CollectionConfig, index.Collec
 	return state.config, state.coll.Stats(), nil
 }
 
+// ExportCollection returns the live vectors of a collection as VectorEntry
+// values. Sealed-segment vectors are reconstructed from quantized codes and are
+// therefore lossy. Used by the import/export CLI.
+func (e *Engine) ExportCollection(name string) (CollectionConfig, []index.VectorEntry, error) {
+	e.mu.RLock()
+	state, ok := e.collections[name]
+	e.mu.RUnlock()
+	if !ok {
+		return CollectionConfig{}, nil, fmt.Errorf("%w: %q", ErrCollectionNotFound, name)
+	}
+	entries, err := state.coll.Snapshot()
+	if err != nil {
+		return CollectionConfig{}, nil, fmt.Errorf("engine: export %q: %w", name, err)
+	}
+	return state.config, entries, nil
+}
+
 // Insert appends a vector to the named collection. The operation is durably
 // logged before applying to the in-memory index.
 func (e *Engine) Insert(ctx context.Context, collection string, entry index.VectorEntry) error {
