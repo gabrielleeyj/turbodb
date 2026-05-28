@@ -22,6 +22,8 @@ import (
 
 	apiv1 "github.com/gabrielleeyj/turbodb/api/v1"
 	"github.com/gabrielleeyj/turbodb/internal/engine"
+	"github.com/gabrielleeyj/turbodb/internal/pgipc"
+	"github.com/gabrielleeyj/turbodb/internal/pgproto"
 	"github.com/gabrielleeyj/turbodb/pkg/telemetry"
 	"google.golang.org/grpc"
 )
@@ -40,6 +42,8 @@ func run() error {
 		dataDir       = flag.String("data-dir", "./turbodb-data", "directory for collection configs, WAL, and segments")
 		logLevel      = flag.String("log-level", "info", "log level: debug, info, warn, error")
 		logFormat     = flag.String("log-format", "json", "log format: json or text")
+		pgSocket      = flag.String("pg-socket", "", "Unix socket for the pg_turboquant IPC server (empty disables)")
+		pgAllowedUID  = flag.Int("pg-allowed-uid", -1, "restrict IPC peers to this UID via SO_PEERCRED (-1 = no check)")
 	)
 	flag.Parse()
 
@@ -77,6 +81,26 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Optional pg_turboquant IPC server (Unix socket) for the PostgreSQL
+	// extension backend.
+	var ipcSrv *pgproto.Server
+	if *pgSocket != "" {
+		ipcSrv = pgproto.NewServer(pgipc.NewAdapter(eng), pgproto.ServerConfig{
+			SocketPath: *pgSocket,
+			AllowedUID: *pgAllowedUID,
+			Logger:     logger,
+		})
+		if err := ipcSrv.Listen(); err != nil {
+			return fmt.Errorf("pg ipc listen: %w", err)
+		}
+		go func() {
+			logger.Info("turbodb-engine: pg ipc serving", "socket", *pgSocket)
+			if err := ipcSrv.Serve(ctx); err != nil {
+				logger.Error("pg ipc server", "error", err)
+			}
+		}()
+	}
+
 	var metricsSrv *http.Server
 	if *metricsListen != "" {
 		mux := http.NewServeMux()
@@ -101,6 +125,9 @@ func run() error {
 	go func() {
 		<-ctx.Done()
 		logger.Info("turbodb-engine: shutdown signal received")
+		if ipcSrv != nil {
+			_ = ipcSrv.Close()
+		}
 		if metricsSrv != nil {
 			shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
 			defer c()
