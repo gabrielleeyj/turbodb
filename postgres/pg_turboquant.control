@@ -1,0 +1,6 @@
+# pg_turboquant extension
+comment = 'GPU-accelerated TurboQuant vector index (delegates to turbodb-engine)'
+default_version = '0.1'
+module_pathname = '$libdir/pg_turboquant'
+relocatable = true
+requires = 'vector'

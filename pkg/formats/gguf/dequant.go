@@ -6,11 +6,11 @@ import (
 	"math"
 )
 
-func f32FromBits(b uint32) float32  { return math.Float32frombits(b) }
-func f64FromBits(b uint64) float64  { return math.Float64frombits(b) }
-func float32bits(f float32) uint32  { return math.Float32bits(f) }
-func float64bits(f float64) uint64  { return math.Float64bits(f) }
-func f32ToF16(f float32) uint16     { return float32ToHalf(f) }
+func f32FromBits(b uint32) float32 { return math.Float32frombits(b) }
+func f64FromBits(b uint64) float64 { return math.Float64frombits(b) }
+func float32bits(f float32) uint32 { return math.Float32bits(f) }
+func float64bits(f float64) uint64 { return math.Float64bits(f) }
+func f32ToF16(f float32) uint16    { return float32ToHalf(f) }
 
 // f16ToF32 converts an IEEE-754 half to float32.
 func f16ToF32(h uint16) float32 {

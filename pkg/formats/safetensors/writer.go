@@ -11,14 +11,14 @@ import (
 // Commit to flush the header, then stream each tensor's bytes with Write in the
 // same order they were declared.
 type Writer struct {
-	w        io.Writer
-	metadata map[string]string
-	order    []string
-	tensors  map[string]TensorInfo
-	cursor   int64 // next data-section offset to assign
+	w         io.Writer
+	metadata  map[string]string
+	order     []string
+	tensors   map[string]TensorInfo
+	cursor    int64 // next data-section offset to assign
 	committed bool
-	writeIdx int   // index into order of the next expected Write
-	written  int64 // bytes written into the data section so far
+	writeIdx  int   // index into order of the next expected Write
+	written   int64 // bytes written into the data section so far
 }
 
 // NewWriter creates a Writer targeting w. metadata may be nil.

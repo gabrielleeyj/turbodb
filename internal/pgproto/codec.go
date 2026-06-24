@@ -11,9 +11,9 @@ type writer struct {
 	buf []byte
 }
 
-func (w *writer) u8(v uint8)   { w.buf = append(w.buf, v) }
-func (w *writer) u32(v uint32) { w.buf = binary.LittleEndian.AppendUint32(w.buf, v) }
-func (w *writer) u64(v uint64) { w.buf = binary.LittleEndian.AppendUint64(w.buf, v) }
+func (w *writer) u8(v uint8)    { w.buf = append(w.buf, v) }
+func (w *writer) u32(v uint32)  { w.buf = binary.LittleEndian.AppendUint32(w.buf, v) }
+func (w *writer) u64(v uint64)  { w.buf = binary.LittleEndian.AppendUint64(w.buf, v) }
 func (w *writer) f32(v float32) { w.u32(math.Float32bits(v)) }
 
 func (w *writer) str(s string) {

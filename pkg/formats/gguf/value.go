@@ -8,10 +8,10 @@ type Value struct {
 	Type      metadataValueType
 	ArrayType metadataValueType // valid when Type == mvArray
 
-	Str    string
-	Num    uint64  // raw bits for integer/bool kinds
-	F64    float64 // float kinds
-	Array  []Value // mvArray
+	Str   string
+	Num   uint64  // raw bits for integer/bool kinds
+	F64   float64 // float kinds
+	Array []Value // mvArray
 }
 
 // AsString returns the string value, or an error if the value is not a string.
