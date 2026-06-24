@@ -36,3 +36,8 @@ postgres/*.o
 postgres/*.so
 postgres/*.dylib
 postgres/*.bc
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

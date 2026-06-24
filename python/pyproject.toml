@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "turboquant-kv"
+version = "0.1.0"
+description = "TurboQuant KV-cache compression backend for vLLM and SGLang"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "TurboDB" }]
+keywords = ["llm", "kv-cache", "quantization", "vllm", "sglang", "turboquant"]
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# The native library (libturboquant) is loaded at runtime via ctypes; it is not
+# a build/install dependency, so the wheel installs cleanly in a fresh venv even
+# without CUDA. Optional integrations are extras.
+dependencies = []
+
+[project.optional-dependencies]
+vllm = ["vllm>=0.6"]
+sglang = ["sglang>=0.3"]
+dev = ["pytest>=7"]
+
+# vLLM discovers KV-cache backends via entry points.
+[project.entry-points."vllm.kv_cache_backends"]
+turboquant = "turboquant_kv.vllm_plugin:register"
+
+[tool.setuptools]
+packages = ["turboquant_kv"]
+
+[tool.pytest.ini_options]
+testpaths = ["turboquant_kv/tests"]
