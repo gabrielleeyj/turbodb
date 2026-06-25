@@ -41,3 +41,10 @@ postgres/*.bc
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Compiled binaries / build output
+/bin/
+/turbodb-bench
+/turbodb-ctl
+/turbodb-engine
+/turbodb-sync

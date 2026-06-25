@@ -24,9 +24,9 @@ Component                  | Location              | Language | Status
 Core TurboQuant Library    | pkg/                  | Go       | Done
 CUDA Kernel Layer          | cuda/, internal/cuda/ | CUDA/Go  | Partially Complete
 Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3 Complete
-PostgreSQL Extension       | postgres/             | C/Go     | Phase 5
-Format Support             | pkg/formats/          | Go       | Phase 4
-KV Cache Plugin            | python/               | Python   | Phase 4
+PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile-verified; GPU acceptance pending)
+Format Support             | pkg/formats/          | Go       | Phase 4 Complete
+KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
 CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6
 Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6
 ```
@@ -100,7 +100,18 @@ go run ./cmd/turbodb-bench/ -vectors 100000 -queries 200 -dim 256 -bit-width 4 -
 go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 ```
 
-**Next:** wire CUDA dispatch into the sealed-segment search path, then Phase 4 (formats + Postgres FDW skeleton).
+**Phase 4 complete** — Format support + KV-cache scaffold.
+
+- Track A — Component 5 (formats), pure Go: `pkg/formats/safetensors` (mmap reader + streaming writer, F16/BF16 conversion, TurboQuant `__metadata__` schema) and `pkg/formats/gguf` (GGUF v3 reader/writer, dequant of F32/F16/Q8_0/Q4_0/Q4_1, custom TurboQuant ggml types 128/129 — see `docs/gguf-turboquant.md`). `turbodb-ctl import|export|inspect|convert` wires these to the engine via `internal/ioformats`. 80%+ coverage across all three.
+- Track B — Component 6 (KV cache): `cuda/include/turboquant_kv.h` defines the KV C ABI; `python/turboquant_kv` is a pip-installable package (imports without CUDA) with `KVConfig`/dtype parsing, a ctypes FFI loader, and vLLM / SGLang / LMCache plugin skeletons (21 tests pass off-GPU). The fused `tq_kv_attention` kernel and accuracy/throughput validation (Task 6.5) are GPU-blocked and exercised in GPU CI.
+
+**Phase 5 substantially complete** — `pg_turboquant` PostgreSQL extension.
+
+- IPC protocol (Task 4.3): `internal/pgproto` (Go server) + `postgres/turbodb_ipc.{c,h}` (C client) speak a length-prefixed binary frame protocol; wire compatibility is proven by a cross-language test that compiles the C client and runs it against the Go engine (`internal/pgipc`).
+- C extension (Tasks 4.1, 4.2, 4.5): `postgres/pg_turboquant.c` implements the `turboquant` `IndexAmRoutine` (build via heap scan → IPC, insert, scan/search, reloptions, costestimate) plus DDL, PGXS Makefile, and the `pg_turboquant_indexes` catalog view. Compiles clean and links against PostgreSQL 18.
+- Deferred (integration/GPU-blocked): Custom WAL Resource Manager (Task 4.4) and the `CREATE INDEX`-on-100k acceptance tests, which need a live cluster with pgvector and the GPU engine.
+
+**Next:** wire CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above), then Phase 6 (CDC/replication + control plane).
 
 ## Quickstart
 
