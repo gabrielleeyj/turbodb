@@ -27,7 +27,7 @@ Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3 Complete
 PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile-verified; GPU acceptance pending)
 Format Support             | pkg/formats/          | Go       | Phase 4 Complete
 KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
-CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6
+CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (pipeline core done; pglogrepl source pending)
 Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6
 ```
 
@@ -111,7 +111,12 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 - C extension (Tasks 4.1, 4.2, 4.5): `postgres/pg_turboquant.c` implements the `turboquant` `IndexAmRoutine` (build via heap scan → IPC, insert, scan/search, reloptions, costestimate) plus DDL, PGXS Makefile, and the `pg_turboquant_indexes` catalog view. Compiles clean and links against PostgreSQL 18.
 - Deferred (integration/GPU-blocked): Custom WAL Resource Manager (Task 4.4) and the `CREATE INDEX`-on-100k acceptance tests, which need a live cluster with pgvector and the GPU engine.
 
-**Next:** wire CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above), then Phase 6 (CDC/replication + control plane).
+**Phase 6 started** — CDC & replication pipeline core (Component 7).
+
+- `pkg/replication`: sync.yaml config with strict validation (Task 7.2), a compiled filter subset (`IS NULL` / `IS NOT NULL` / `=` / `!=` / `AND`), event transformer with soft-delete semantics (an update that stops matching the filter becomes an engine delete), CRC32C-protected atomic file LSN checkpoint, and a batching engine writer with exponential-backoff retry + jitter and a consecutive-failure circuit breaker (Task 7.3). The `Sync` loop wires source → transform → write → checkpoint and only acks LSNs after successful flushes. 89% coverage, race-clean.
+- `cmd/turbodb-sync check-config` validates a sync.yaml; the pglogrepl source (Task 7.1) plugs into `replication.EventSource` and needs a live PostgreSQL with logical replication.
+
+**Next:** Task 7.1 (pglogrepl consumer against a real replication slot), Task 7.4 (reconciliation job), and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
 
 ## Quickstart
 
