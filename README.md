@@ -27,7 +27,7 @@ Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3 Complete
 PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile-verified; GPU acceptance pending)
 Format Support             | pkg/formats/          | Go       | Phase 4 Complete
 KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
-CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (pipeline core done; pglogrepl source pending)
+CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (Tasks 7.1-7.3 done; reconcile pending)
 Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6
 ```
 
@@ -114,9 +114,10 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 **Phase 6 started** — CDC & replication pipeline core (Component 7).
 
 - `pkg/replication`: sync.yaml config with strict validation (Task 7.2), a compiled filter subset (`IS NULL` / `IS NOT NULL` / `=` / `!=` / `AND`), event transformer with soft-delete semantics (an update that stops matching the filter becomes an engine delete), CRC32C-protected atomic file LSN checkpoint, and a batching engine writer with exponential-backoff retry + jitter and a consecutive-failure circuit breaker (Task 7.3). The `Sync` loop wires source → transform → write → checkpoint and only acks LSNs after successful flushes. 89% coverage, race-clean.
-- `cmd/turbodb-sync check-config` validates a sync.yaml; the pglogrepl source (Task 7.1) plugs into `replication.EventSource` and needs a live PostgreSQL with logical replication.
+- Task 7.1 — logical replication consumer: `PgSource` consumes a replication slot via `jackc/pglogrepl` (pgoutput), resolves column names from Relation messages (schema evolution), buffers events per transaction and stamps them with the transaction end LSN so a checkpointed restart never replays or loses a transaction. Delivery is at-least-once with idempotent engine writes; PostgreSQL WAL is only released past LSNs that were flushed to the engine AND checkpointed (`LSNAcker`). Integration tests (`TestPgSourceEndToEnd`, `TestPgSourceDurabilityAcrossRestart`) run against a live `pgvector/pgvector:pg17` container when `TURBODB_TEST_PG_DSN` is set and skip otherwise.
+- `cmd/turbodb-sync run` wires PgSource -> transformer -> gRPC engine writer -> checkpoint; `check-config` validates a sync.yaml. Verified live end-to-end: Postgres inserts + a soft-delete replicated into a running `turbodb-engine`, with search correctly excluding the tombstoned row.
 
-**Next:** Task 7.1 (pglogrepl consumer against a real replication slot), Task 7.4 (reconciliation job), and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
+**Next:** Task 7.4 (reconciliation job), Component 8 control-plane expansion, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
 
 ## Quickstart
 

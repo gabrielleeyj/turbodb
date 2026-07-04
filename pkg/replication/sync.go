@@ -28,6 +28,13 @@ func (o SyncOptions) withDefaults() SyncOptions {
 	return o
 }
 
+// LSNAcker is implemented by sources that can acknowledge durably applied
+// positions upstream (PgSource reports them to PostgreSQL so WAL can be
+// recycled). Acking happens only after a successful flush AND checkpoint.
+type LSNAcker interface {
+	AckLSN(lsn uint64)
+}
+
 // Sync drives the pipeline: source -> transformer -> writer, checkpointing
 // the applied LSN after every successful flush. It returns nil when the
 // source is exhausted (io.EOF), and the first fatal error otherwise —
@@ -37,6 +44,7 @@ func Sync(ctx context.Context, src EventSource, tr *Transformer, w *Writer, cp C
 	opts = opts.withDefaults()
 	lastFlush := time.Now()
 	checkpointed := uint64(0)
+	acker, _ := src.(LSNAcker)
 
 	flushAndCheckpoint := func() error {
 		if err := w.Flush(ctx); err != nil {
@@ -48,6 +56,9 @@ func Sync(ctx context.Context, src EventSource, tr *Transformer, w *Writer, cp C
 				return fmt.Errorf("replication: checkpoint LSN %d: %w", lsn, err)
 			}
 			checkpointed = lsn
+			if acker != nil {
+				acker.AckLSN(lsn)
+			}
 		}
 		return nil
 	}
@@ -56,11 +67,23 @@ func Sync(ctx context.Context, src EventSource, tr *Transformer, w *Writer, cp C
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		ev, err := src.Next(ctx)
+		// Bound Next by the flush interval: a live replication source blocks
+		// indefinitely while the stream is idle, and buffered ops must still
+		// be flushed and checkpointed on time.
+		nextCtx, cancel := context.WithTimeout(ctx, opts.FlushInterval)
+		ev, err := src.Next(nextCtx)
+		cancel()
 		if errors.Is(err, io.EOF) {
 			return flushAndCheckpoint()
 		}
 		if err != nil {
+			if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+				// Source idle: flush whatever is buffered.
+				if ferr := flushAndCheckpoint(); ferr != nil {
+					return ferr
+				}
+				continue
+			}
 			return fmt.Errorf("replication: source: %w", err)
 		}
 
