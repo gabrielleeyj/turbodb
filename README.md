@@ -28,7 +28,7 @@ PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile
 Format Support             | pkg/formats/          | Go       | Phase 4 Complete
 KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
 CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (Tasks 7.1-7.4 done; Kafka mode optional)
-Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6
+Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6 (Task 8.1 done; admin API pending)
 ```
 
 ## Language Boundaries
@@ -121,7 +121,12 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 - Throughput fix for the 5s/10k acceptance SLO: `wal.AppendBatch` + `Engine.InsertBatch` give a whole insert batch one durability action instead of a per-record fsync (or per-record group-commit tick, which serializes sequential writers to ~one insert per interval). The engine binary gains `--wal-fsync=every|group`. Measured live: 10k rows PostgreSQL -> engine in **1.8s** (was 29.4s); reconcile over 10k rows ~90ms, zero discrepancies, and an injected fault (3 missing + 2 orphaned) detected and repaired exactly.
 - `PgSource` now sends standby status updates while draining large transactions, so the walsender no longer hits `wal_sender_timeout` mid-batch.
 
-**Next:** Component 8 control-plane expansion (Cobra CLI, admin HTTP API), Task 7.5 optional Kafka transport, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
+**Component 8 started** — Cobra-based control plane CLI (Task 8.1).
+
+- `turbodb-ctl` is now a Cobra command tree: `collection create|list|describe|drop|flush` and `index build-stats` talk to a running engine over gRPC (`--engine`); `import|export|inspect|convert` keep operating on a data directory offline (`--data-dir`); `sync status` reads the LSN checkpoint and `sync reconcile [collection]` runs the Task 7.4 reconciler (`--repair` to fix). `collection drop` requires `--confirm`. Shell completions and help come from Cobra. The gRPC adapter shared by turbodb-sync and turbodb-ctl lives in `internal/enginerpc`.
+- Deferred pending engine support: `index compact` (no segment compaction API yet), `benchmark` (use `turbodb-bench`), and the `admin` group (`gpu-info`, `rotator-regenerate`, `codebook-upgrade` — the TurboDBAdmin gRPC service is defined in `api/v1/admin.proto` but not yet implemented in the engine; lands with Task 8.2).
+
+**Next:** Task 8.2 (admin HTTP API + TurboDBAdmin gRPC service), Task 7.5 optional Kafka transport, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
 
 ## Quickstart
 

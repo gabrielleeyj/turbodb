@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gabrielleeyj/turbodb/internal/enginerpc"
 	"github.com/gabrielleeyj/turbodb/pkg/replication"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -36,7 +37,7 @@ func runReconcile(args []string) error {
 	if err != nil {
 		return err
 	}
-	engine, err := dialEngine(*engineAddr)
+	engine, err := enginerpc.Dial(*engineAddr)
 	if err != nil {
 		return err
 	}

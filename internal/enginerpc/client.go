@@ -1,4 +1,7 @@
-package main
+// Package enginerpc adapts the engine's gRPC API to the interfaces the
+// replication pipeline consumes (EngineClient, IndexIDLister). Shared by
+// turbodb-sync and turbodb-ctl.
+package enginerpc
 
 import (
 	"context"
@@ -10,22 +13,25 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// grpcEngine adapts the engine's gRPC API to replication.EngineClient.
-type grpcEngine struct {
+// Client is a gRPC-backed replication.EngineClient and
+// replication.IndexIDLister.
+type Client struct {
 	conn   *grpc.ClientConn
 	client apiv1.TurboDBEngineClient
 }
 
-func dialEngine(addr string) (*grpcEngine, error) {
+// Dial connects to a turbodb-engine gRPC address.
+func Dial(addr string) (*Client, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("dial engine %s: %w", addr, err)
 	}
-	return &grpcEngine{conn: conn, client: apiv1.NewTurboDBEngineClient(conn)}, nil
+	return &Client{conn: conn, client: apiv1.NewTurboDBEngineClient(conn)}, nil
 }
 
-func (g *grpcEngine) InsertBatch(ctx context.Context, collection string, records []replication.VectorRecord) error {
-	stream, err := g.client.InsertBatch(ctx)
+// InsertBatch streams one batch of vectors into a collection.
+func (c *Client) InsertBatch(ctx context.Context, collection string, records []replication.VectorRecord) error {
+	stream, err := c.client.InsertBatch(ctx)
 	if err != nil {
 		return fmt.Errorf("engine insert batch: %w", err)
 	}
@@ -42,19 +48,19 @@ func (g *grpcEngine) InsertBatch(ctx context.Context, collection string, records
 	return nil
 }
 
-func (g *grpcEngine) DeleteBatch(ctx context.Context, collection string, ids []string) error {
+// DeleteBatch deletes ids from a collection.
+func (c *Client) DeleteBatch(ctx context.Context, collection string, ids []string) error {
 	for _, id := range ids {
-		if _, err := g.client.Delete(ctx, &apiv1.DeleteRequest{Collection: collection, Id: id}); err != nil {
+		if _, err := c.client.Delete(ctx, &apiv1.DeleteRequest{Collection: collection, Id: id}); err != nil {
 			return fmt.Errorf("engine delete %s/%s: %w", collection, id, err)
 		}
 	}
 	return nil
 }
 
-// ListIDs implements replication.IndexIDLister via the engine's paginated
-// ListIDs RPC.
-func (g *grpcEngine) ListIDs(ctx context.Context, collection, afterID string, pageSize int) ([]string, bool, error) {
-	resp, err := g.client.ListIDs(ctx, &apiv1.ListIDsRequest{
+// ListIDs pages a collection's live vector ids via the engine's ListIDs RPC.
+func (c *Client) ListIDs(ctx context.Context, collection, afterID string, pageSize int) ([]string, bool, error) {
+	resp, err := c.client.ListIDs(ctx, &apiv1.ListIDsRequest{
 		Collection: collection,
 		AfterId:    afterID,
 		PageSize:   int32(pageSize), // #nosec G115 -- page sizes are small
@@ -65,4 +71,5 @@ func (g *grpcEngine) ListIDs(ctx context.Context, collection, afterID string, pa
 	return resp.GetIds(), resp.GetHasMore(), nil
 }
 
-func (g *grpcEngine) Close() error { return g.conn.Close() }
+// Close releases the connection.
+func (c *Client) Close() error { return c.conn.Close() }

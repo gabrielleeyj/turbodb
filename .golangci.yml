@@ -25,6 +25,12 @@ linters:
         - name: dot-imports
   exclusions:
     rules:
+      # CLI binaries: checking fmt.Fprint* errors on command output writers
+      # is noise; failures there are unactionable.
+      - path: ^cmd/
+        linters:
+          - errcheck
+        text: "fmt.Fprint"
       # Tests operate on synthetic data and local fixtures; gosec findings
       # (weak rand, file perms, variable paths/subprocess) are not applicable.
       - path: _test\.go

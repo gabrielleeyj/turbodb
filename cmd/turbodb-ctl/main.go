@@ -1,58 +1,56 @@
-// Command turbodb-ctl is the control/operations CLI for TurboDB. It currently
-// implements the Phase 4 import/export/inspect/convert tooling for the
-// SafeTensors and GGUF tensor formats.
+// TurboDB Control is the operator CLI for TurboDB (SCOPE Component 8).
+//
+// Remote commands (collection, index, sync reconcile) talk to a running
+// turbodb-engine over gRPC via --engine. File commands (import, export,
+// inspect, convert) open an engine data directory directly via --data-dir
+// and must not run against a directory a live engine is using.
 package main
 
 import (
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
+// version is stamped via -ldflags "-X main.version=..." at release build.
+var version = "dev"
+
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
-	}
-	cmd := os.Args[1]
-	args := os.Args[2:]
-
-	var err error
-	switch cmd {
-	case "import":
-		err = runImport(args)
-	case "export":
-		err = runExport(args)
-	case "inspect":
-		err = runInspect(args)
-	case "convert":
-		err = runConvert(args)
-	case "-h", "--help", "help":
-		usage()
-		return
-	default:
-		fmt.Fprintf(os.Stderr, "turbodb-ctl: unknown command %q\n\n", cmd)
-		usage()
-		os.Exit(2)
-	}
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "turbodb-ctl %s: %v\n", cmd, err)
+	if err := newRootCmd().Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "turbodb-ctl: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func usage() {
-	fmt.Fprint(os.Stderr, `turbodb-ctl — TurboDB control CLI
+func newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:           "turbodb-ctl",
+		Short:         "Operator CLI for TurboDB",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+	}
+	root.PersistentFlags().String("engine", "localhost:7080", "engine gRPC address for remote commands")
 
-Usage:
-  turbodb-ctl import  --format safetensors|gguf --input FILE --collection NAME [--tensor NAME] [--data-dir DIR] [--bits N]
-  turbodb-ctl export  --collection NAME --output FILE [--data-dir DIR]
-  turbodb-ctl inspect --format safetensors|gguf --input FILE
-  turbodb-ctl convert --from safetensors --to gguf --input FILE --output FILE
+	root.AddCommand(
+		newCollectionCmd(),
+		newIndexCmd(),
+		newImportCmd(),
+		newExportCmd(),
+		newInspectCmd(),
+		newConvertCmd(),
+		newSyncCmd(),
+		newVersionCmd(),
+	)
+	return root
+}
 
-Examples:
-  turbodb-ctl import --format safetensors --input embeddings.safetensors --collection docs
-  turbodb-ctl import --format gguf --input model.gguf --tensor embedding.weight --collection vocab
-  turbodb-ctl export --collection docs --output docs.safetensors
-`)
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the turbodb-ctl version",
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), "turbodb-ctl", version)
+		},
+	}
 }

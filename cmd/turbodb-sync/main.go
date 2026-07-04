@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/gabrielleeyj/turbodb/internal/enginerpc"
 	"github.com/gabrielleeyj/turbodb/pkg/replication"
 )
 
@@ -89,7 +90,7 @@ func runSync(args []string) error {
 		return err
 	}
 
-	engine, err := dialEngine(*engineAddr)
+	engine, err := enginerpc.Dial(*engineAddr)
 	if err != nil {
 		return err
 	}
