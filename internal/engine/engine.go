@@ -106,9 +106,11 @@ func New(cfg Config) (*Engine, error) {
 	}
 
 	w, err := wal.Open(wal.Config{
-		Dir:           walDir(cfg.DataDir),
-		Logger:        cfg.Logger,
-		FsyncObserver: e.observeWALFsync,
+		Dir:                 walDir(cfg.DataDir),
+		FsyncPolicy:         cfg.WALFsyncPolicy,
+		GroupCommitInterval: cfg.WALGroupCommitInterval,
+		Logger:              cfg.Logger,
+		FsyncObserver:       e.observeWALFsync,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("engine: open wal: %w", err)
@@ -280,6 +282,55 @@ func (e *Engine) Insert(_ context.Context, collection string, entry index.Vector
 	return nil
 }
 
+// InsertBatch inserts several vectors with one WAL durability action for
+// the whole batch (see wal.AppendBatch). All entries are validated before
+// anything is written; a validation failure rejects the entire batch.
+func (e *Engine) InsertBatch(_ context.Context, collection string, entries []index.VectorEntry) (int, error) {
+	if len(entries) == 0 {
+		return 0, nil
+	}
+
+	e.mu.RLock()
+	state, ok := e.collections[collection]
+	e.mu.RUnlock()
+	if !ok {
+		return 0, fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
+	}
+
+	payloads := make([][]byte, len(entries))
+	for i, entry := range entries {
+		if err := validateVector(entry, 0); err != nil {
+			return 0, fmt.Errorf("engine: insert batch entry %d: %w", i, err)
+		}
+		if len(entry.Values) != state.config.Dim {
+			return 0, fmt.Errorf("engine: insert batch entry %d: expected dim %d, got %d",
+				i, state.config.Dim, len(entry.Values))
+		}
+		payload, err := wal.EncodeInsert(wal.InsertPayload{
+			Collection: collection,
+			ID:         entry.ID,
+			Values:     entry.Values,
+			Metadata:   entry.Metadata,
+		})
+		if err != nil {
+			return 0, err
+		}
+		payloads[i] = payload
+	}
+
+	if _, err := e.wal.AppendBatch(wal.OpInsert, payloads); err != nil {
+		return 0, fmt.Errorf("engine: wal append batch: %w", err)
+	}
+	for i, entry := range entries {
+		if err := state.coll.Insert(entry); err != nil {
+			e.metrics.Load().AddInserts(i)
+			return i, fmt.Errorf("engine: insert batch entry %d: %w", i, err)
+		}
+	}
+	e.metrics.Load().AddInserts(len(entries))
+	return len(entries), nil
+}
+
 // Delete tombstones a vector from the named collection.
 func (e *Engine) Delete(_ context.Context, collection, id string) error {
 	if id == "" {
@@ -356,6 +407,18 @@ func (e *Engine) Flush(_ context.Context, collection string) error {
 		return fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
 	}
 	return state.coll.Flush()
+}
+
+// ListIDs returns the live vector ids of a collection in bytewise ascending
+// order. Used by reconciliation.
+func (e *Engine) ListIDs(collection string) ([]string, error) {
+	e.mu.RLock()
+	state, ok := e.collections[collection]
+	e.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrCollectionNotFound, collection)
+	}
+	return state.coll.IDs(), nil
 }
 
 // Stats returns runtime statistics for a collection.

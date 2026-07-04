@@ -51,4 +51,18 @@ func (g *grpcEngine) DeleteBatch(ctx context.Context, collection string, ids []s
 	return nil
 }
 
+// ListIDs implements replication.IndexIDLister via the engine's paginated
+// ListIDs RPC.
+func (g *grpcEngine) ListIDs(ctx context.Context, collection, afterID string, pageSize int) ([]string, bool, error) {
+	resp, err := g.client.ListIDs(ctx, &apiv1.ListIDsRequest{
+		Collection: collection,
+		AfterId:    afterID,
+		PageSize:   int32(pageSize), // #nosec G115 -- page sizes are small
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("engine list ids: %w", err)
+	}
+	return resp.GetIds(), resp.GetHasMore(), nil
+}
+
 func (g *grpcEngine) Close() error { return g.conn.Close() }

@@ -166,6 +166,70 @@ func Open(cfg Config) (*WAL, error) {
 	return w, nil
 }
 
+// AppendBatch writes several records of the same type, returning the LSN of
+// the first. The whole batch shares one durability action — a single fsync
+// under FsyncEveryWrite, or one group-commit wait under FsyncGroupCommit —
+// so sequential bulk loads do not pay a per-record fsync (or a per-record
+// group-commit tick, which serializes to ~one record per interval).
+// LSNs are assigned contiguously in payload order.
+func (w *WAL) AppendBatch(typ RecordType, payloads [][]byte) (uint64, error) {
+	if w.closed.Load() {
+		return 0, fmt.Errorf("wal: closed")
+	}
+	if len(payloads) == 0 {
+		return 0, fmt.Errorf("wal: empty batch")
+	}
+
+	w.mu.Lock()
+	firstLSN := w.nextLSN.Load()
+	for _, payload := range payloads {
+		lsn := w.nextLSN.Add(1) - 1
+		rec := Record{LSN: lsn, Type: typ, Payload: payload}
+
+		size := EncodedSize(len(payload))
+		if w.curBytes > 0 && w.curBytes+int64(size) > w.maxFileBytes {
+			if err := w.rotateLocked(); err != nil {
+				w.mu.Unlock()
+				return 0, err
+			}
+		}
+		n, err := writeRecord(w.curWrite, rec)
+		if err != nil {
+			w.mu.Unlock()
+			return 0, err
+		}
+		w.curBytes += int64(n)
+	}
+
+	if w.policy == FsyncEveryWrite {
+		err := w.flushAndSyncLocked()
+		w.mu.Unlock()
+		if err != nil {
+			return 0, fmt.Errorf("wal: fsync: %w", err)
+		}
+		return firstLSN, nil
+	}
+
+	// Group commit: one wait for the whole batch.
+	w.mu.Unlock()
+	req := groupReq{done: make(chan error, 1)}
+	select {
+	case w.groupCh <- req:
+	default:
+		w.mu.Lock()
+		err := w.flushAndSyncLocked()
+		w.mu.Unlock()
+		if err != nil {
+			return 0, fmt.Errorf("wal: fsync (fallback): %w", err)
+		}
+		return firstLSN, nil
+	}
+	if err := <-req.done; err != nil {
+		return 0, err
+	}
+	return firstLSN, nil
+}
+
 // NextLSN returns the LSN that will be assigned to the next successful Append.
 func (w *WAL) NextLSN() uint64 {
 	return w.nextLSN.Load()

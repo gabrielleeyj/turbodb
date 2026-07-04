@@ -143,10 +143,17 @@ func (s *PgSource) start(ctx context.Context) error {
 func (s *PgSource) AckLSN(lsn uint64) { s.ackLSN.Store(lsn) }
 
 // Next returns the next change event, blocking until one arrives or ctx is
-// done. Keepalives and standby status updates are handled internally.
+// done. Keepalives and standby status updates are handled internally — also
+// while draining a large buffered transaction, so a slow consumer never
+// starves the walsender past wal_sender_timeout.
 func (s *PgSource) Next(ctx context.Context) (ChangeEvent, error) {
 	for {
 		if len(s.queue) > 0 {
+			if time.Since(s.lastStatus) >= s.cfg.StandbyTimeout {
+				if err := s.sendStatus(ctx); err != nil {
+					return ChangeEvent{}, err
+				}
+			}
 			ev := s.queue[0]
 			s.queue = s.queue[1:]
 			return ev, nil

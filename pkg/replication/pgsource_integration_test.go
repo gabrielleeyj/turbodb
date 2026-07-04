@@ -262,3 +262,93 @@ func TestPgSourceDurabilityAcrossRestart(t *testing.T) {
 		t.Errorf("checkpoint should advance: %d -> %d", lsn1, lsn2)
 	}
 }
+
+func TestPgTableScannerLive(t *testing.T) {
+	dsn := pgDSN(t)
+	admin, table, _, _ := setupPgFixture(t, dsn)
+
+	pgExec(t, admin, fmt.Sprintf(
+		"INSERT INTO public.%s VALUES ('a','[1,2,3]',NULL),('b','[4,5,6]','gone'),('c','[7,8,9]',NULL)", table))
+
+	scanner, err := NewPgTableScanner(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	cfg, err := ParseConfig(syncYAMLFor(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping := cfg.Tables[0]
+
+	// Page size 2 forces keyset pagination.
+	rows1, more, err := scanner.ScanRows(context.Background(), mapping, "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows1) != 2 || !more {
+		t.Fatalf("page 1: %d rows, more=%v", len(rows1), more)
+	}
+	rows2, more, err := scanner.ScanRows(context.Background(), mapping, "b", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows2) != 1 || more {
+		t.Fatalf("page 2: %d rows, more=%v", len(rows2), more)
+	}
+	if id, _ := rows2[0]["doc_id"].(string); id != "c" {
+		t.Errorf("page 2 id: got %v, want c", rows2[0]["doc_id"])
+	}
+	if emb, _ := rows2[0]["embedding"].(string); emb != "[7,8,9]" {
+		t.Errorf("embedding text: got %v", rows2[0]["embedding"])
+	}
+}
+
+func TestReconcileLiveEndToEnd(t *testing.T) {
+	dsn := pgDSN(t)
+	admin, table, _, _ := setupPgFixture(t, dsn)
+
+	// Source: a (live), b (soft-deleted), c (live).
+	pgExec(t, admin, fmt.Sprintf(
+		"INSERT INTO public.%s VALUES ('a','[1,2,3]',NULL),('b','[4,5,6]','gone'),('c','[7,8,9]',NULL)", table))
+
+	scanner, err := NewPgTableScanner(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = scanner.Close() }()
+
+	cfg, err := ParseConfig(syncYAMLFor(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Engine believes it has b (orphan: filtered in source) and c; a is missing.
+	eng := &fakeEngine{}
+	rec, err := NewReconciler(cfg, ReconcilerConfig{
+		Source: scanner,
+		Index:  &fakeIDLister{ids: []string{"b", "c"}},
+		Engine: eng,
+		Repair: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := rec.ReconcileTable(context.Background(), cfg.Tables[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.MissingInEngine) != 1 || report.MissingInEngine[0] != "a" {
+		t.Errorf("missing: got %v, want [a]", report.MissingInEngine)
+	}
+	if len(report.OrphanedInEngine) != 1 || report.OrphanedInEngine[0] != "b" {
+		t.Errorf("orphaned: got %v, want [b]", report.OrphanedInEngine)
+	}
+	if len(eng.inserts) != 1 || eng.inserts[0][0].ID != "a" || len(eng.inserts[0][0].Vector) != 3 {
+		t.Errorf("repair upsert: %+v", eng.inserts)
+	}
+	if len(eng.deletes) != 1 || eng.deletes[0][0] != "b" {
+		t.Errorf("repair delete: %v", eng.deletes)
+	}
+}

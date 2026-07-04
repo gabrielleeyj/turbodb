@@ -1,0 +1,65 @@
+package engine
+
+import (
+	"context"
+	"fmt"
+	"math/rand/v2"
+	"path/filepath"
+	"testing"
+
+	"github.com/gabrielleeyj/turbodb/pkg/index"
+)
+
+func TestEngineInsertBatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	e, err := New(Config{DataDir: filepath.Join(dir, "data")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := e.CreateCollection(ctx, defaultCollection("batch")); err != nil {
+		t.Fatal(err)
+	}
+
+	rng := rand.New(rand.NewPCG(5, 6))
+	entries := make([]index.VectorEntry, 50)
+	for i := range entries {
+		entries[i] = index.VectorEntry{ID: fmt.Sprintf("b%02d", i), Values: randVec(rng)}
+	}
+	n, err := e.InsertBatch(ctx, "batch", entries)
+	if err != nil || n != 50 {
+		t.Fatalf("InsertBatch: n=%d err=%v", n, err)
+	}
+
+	// All-or-nothing validation: one bad dim rejects the whole batch.
+	bad := append([]index.VectorEntry{}, entries[:2]...)
+	bad[1] = index.VectorEntry{ID: "short", Values: []float32{1, 2}}
+	if _, err := e.InsertBatch(ctx, "batch", bad); err == nil {
+		t.Error("expected dim validation error")
+	}
+
+	// Durability: reopen and confirm WAL replay restores the batch.
+	if err := e.Close(); err != nil {
+		t.Fatal(err)
+	}
+	e2, err := New(Config{DataDir: filepath.Join(dir, "data")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = e2.Close() }()
+	ids, err := e2.ListIDs("batch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 50 {
+		t.Errorf("after replay: %d ids, want 50", len(ids))
+	}
+
+	if _, err := e2.InsertBatch(ctx, "nope", entries); err == nil {
+		t.Error("expected error for unknown collection")
+	}
+	if n, err := e2.InsertBatch(ctx, "batch", nil); n != 0 || err != nil {
+		t.Errorf("empty batch: n=%d err=%v", n, err)
+	}
+}

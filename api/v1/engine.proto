@@ -26,6 +26,9 @@ service TurboDBEngine {
   // Maintenance
   rpc Flush(FlushRequest) returns (FlushResponse);
   rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+  // ListIDs pages through a collection's live vector ids in bytewise
+  // ascending order. Used by turbodb-sync reconciliation.
+  rpc ListIDs(ListIDsRequest) returns (ListIDsResponse);
 }
 
 // --- Collection management ---
@@ -142,4 +145,20 @@ message GetStatsRequest {
 
 message GetStatsResponse {
   CollectionStats stats = 1;
+}
+
+message ListIDsRequest {
+  string collection = 1;
+  // after_id returns ids strictly greater (bytewise) than this value;
+  // empty starts from the beginning.
+  string after_id = 2;
+  // page_size caps the number of ids returned; the server applies a
+  // default and an upper bound.
+  int32 page_size = 3;
+}
+
+message ListIDsResponse {
+  repeated string ids = 1;
+  // has_more is true when ids remain after the last returned id.
+  bool has_more = 2;
 }

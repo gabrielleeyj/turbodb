@@ -25,15 +25,17 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: turbodb-sync <check-config|run> [flags]")
+		return fmt.Errorf("usage: turbodb-sync <check-config|run|reconcile> [flags]")
 	}
 	switch args[0] {
 	case "check-config":
 		return runCheckConfig(args[1:])
 	case "run":
 		return runSync(args[1:])
+	case "reconcile":
+		return runReconcile(args[1:])
 	default:
-		return fmt.Errorf("unknown command %q (expected check-config or run)", args[0])
+		return fmt.Errorf("unknown command %q (expected check-config, run, or reconcile)", args[0])
 	}
 }
 

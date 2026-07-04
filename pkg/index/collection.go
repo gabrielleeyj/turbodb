@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -328,6 +329,34 @@ func (c *Collection) Snapshot() ([]VectorEntry, error) {
 		out = append(out, entries...)
 	}
 	return out, nil
+}
+
+// IDs returns the ids of all live vectors (tombstoned ids excluded), sorted
+// in bytewise ascending order. Unlike Snapshot it does not reconstruct
+// vectors, so it is cheap enough for reconciliation scans.
+func (c *Collection) IDs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	seen := make(map[string]struct{})
+	for _, entry := range c.growing.Entries() {
+		if !c.tombstones.IsDeleted(entry.ID) {
+			seen[entry.ID] = struct{}{}
+		}
+	}
+	for _, s := range c.sealed {
+		for _, id := range s.IDs() {
+			if !c.tombstones.IsDeleted(id) {
+				seen[id] = struct{}{}
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for id := range seen {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // CollectionStats holds statistics about a collection.

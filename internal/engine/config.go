@@ -9,6 +9,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/gabrielleeyj/turbodb/pkg/wal"
 )
 
 // Variant identifies the quantization algorithm.
@@ -65,6 +68,14 @@ func (c CollectionConfig) Validate() error {
 
 // Config configures the Engine.
 type Config struct {
+	// WALFsyncPolicy selects wal.FsyncEveryWrite (default; every insert is
+	// durable on return) or wal.FsyncGroupCommit (fsync batched on
+	// WALGroupCommitInterval; higher throughput, bounded loss window on
+	// crash — reconciliation repairs any divergence).
+	WALFsyncPolicy wal.FsyncPolicy
+	// WALGroupCommitInterval is the fsync cadence under FsyncGroupCommit.
+	// Zero uses the WAL default (10ms).
+	WALGroupCommitInterval time.Duration
 	// DataDir holds collection metadata, sealed segments, and the WAL.
 	DataDir string
 	// SealThreshold is the number of vectors per growing segment before auto-seal.

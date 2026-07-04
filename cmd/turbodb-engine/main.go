@@ -25,6 +25,7 @@ import (
 	"github.com/gabrielleeyj/turbodb/internal/pgipc"
 	"github.com/gabrielleeyj/turbodb/internal/pgproto"
 	"github.com/gabrielleeyj/turbodb/pkg/telemetry"
+	"github.com/gabrielleeyj/turbodb/pkg/wal"
 	"google.golang.org/grpc"
 )
 
@@ -44,6 +45,8 @@ func run() error {
 		logFormat     = flag.String("log-format", "json", "log format: json or text")
 		pgSocket      = flag.String("pg-socket", "", "Unix socket for the pg_turboquant IPC server (empty disables)")
 		pgAllowedUID  = flag.Int("pg-allowed-uid", -1, "restrict IPC peers to this UID via SO_PEERCRED (-1 = no check)")
+		walFsync      = flag.String("wal-fsync", "every", "WAL fsync policy: every (durable per insert) or group (batched fsync, higher throughput)")
+		walGroupInt   = flag.Duration("wal-group-interval", 0, "fsync cadence for --wal-fsync=group (default 10ms)")
 	)
 	flag.Parse()
 
@@ -51,9 +54,21 @@ func run() error {
 
 	// Engine first; pass it as the StatsSource for metrics so the gauges
 	// reflect live state. Metrics are wired back in after construction.
+	var fsyncPolicy wal.FsyncPolicy
+	switch *walFsync {
+	case "every":
+		fsyncPolicy = wal.FsyncEveryWrite
+	case "group":
+		fsyncPolicy = wal.FsyncGroupCommit
+	default:
+		return fmt.Errorf("invalid --wal-fsync %q (expected every or group)", *walFsync)
+	}
+
 	eng, err := engine.New(engine.Config{
-		DataDir: *dataDir,
-		Logger:  logger,
+		DataDir:                *dataDir,
+		Logger:                 logger,
+		WALFsyncPolicy:         fsyncPolicy,
+		WALGroupCommitInterval: *walGroupInt,
 	})
 	if err != nil {
 		return fmt.Errorf("init engine: %w", err)

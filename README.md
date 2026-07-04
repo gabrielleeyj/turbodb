@@ -27,7 +27,7 @@ Standalone GPU Engine      | cmd/turbodb-engine/   | Go       | Phase 3 Complete
 PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile-verified; GPU acceptance pending)
 Format Support             | pkg/formats/          | Go       | Phase 4 Complete
 KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
-CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (Tasks 7.1-7.3 done; reconcile pending)
+CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (Tasks 7.1-7.4 done; Kafka mode optional)
 Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6
 ```
 
@@ -117,7 +117,11 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 - Task 7.1 — logical replication consumer: `PgSource` consumes a replication slot via `jackc/pglogrepl` (pgoutput), resolves column names from Relation messages (schema evolution), buffers events per transaction and stamps them with the transaction end LSN so a checkpointed restart never replays or loses a transaction. Delivery is at-least-once with idempotent engine writes; PostgreSQL WAL is only released past LSNs that were flushed to the engine AND checkpointed (`LSNAcker`). Integration tests (`TestPgSourceEndToEnd`, `TestPgSourceDurabilityAcrossRestart`) run against a live `pgvector/pgvector:pg17` container when `TURBODB_TEST_PG_DSN` is set and skip otherwise.
 - `cmd/turbodb-sync run` wires PgSource -> transformer -> gRPC engine writer -> checkpoint; `check-config` validates a sync.yaml. Verified live end-to-end: Postgres inserts + a soft-delete replicated into a running `turbodb-engine`, with search correctly excluding the tombstoned row.
 
-**Next:** Task 7.4 (reconciliation job), Component 8 control-plane expansion, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
+- Task 7.4 — reconciliation: `turbodb-sync reconcile` merge-diffs the source table against the engine collection as two id-ordered streams (PostgreSQL side ordered with `COLLATE "C"` to match Go's bytewise comparison; engine side served by a new paginated `ListIDs` RPC). Rows filtered out of the source count as engine orphans; `--repair` applies upserts/deletes through the batched writer; `--interval` re-runs periodically and `--metrics-listen` exposes `turbodb_sync_reconcile_discrepancies_total` / `turbodb_sync_reconcile_last_run_seconds`. Vector contents are not compared (quantization is lossy) — reconciliation is id-presence based.
+- Throughput fix for the 5s/10k acceptance SLO: `wal.AppendBatch` + `Engine.InsertBatch` give a whole insert batch one durability action instead of a per-record fsync (or per-record group-commit tick, which serializes sequential writers to ~one insert per interval). The engine binary gains `--wal-fsync=every|group`. Measured live: 10k rows PostgreSQL -> engine in **1.8s** (was 29.4s); reconcile over 10k rows ~90ms, zero discrepancies, and an injected fault (3 missing + 2 orphaned) detected and repaired exactly.
+- `PgSource` now sends standby status updates while draining large transactions, so the walsender no longer hits `wal_sender_timeout` mid-batch.
+
+**Next:** Component 8 control-plane expansion (Cobra CLI, admin HTTP API), Task 7.5 optional Kafka transport, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
 
 ## Quickstart
 

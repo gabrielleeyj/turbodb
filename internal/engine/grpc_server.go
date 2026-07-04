@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	apiv1 "github.com/gabrielleeyj/turbodb/api/v1"
@@ -106,12 +107,14 @@ func (s *GRPCServer) InsertBatch(stream apiv1.TurboDBEngine_InsertBatchServer) e
 		if coll == "" {
 			return status.Error(codes.InvalidArgument, "collection is required")
 		}
-		for _, v := range req.GetVectors() {
-			entry := index.VectorEntry{ID: v.GetId(), Values: v.GetValues(), Metadata: v.GetMetadata()}
-			if err := s.engine.Insert(ctx, coll, entry); err != nil {
-				return mapError(err)
-			}
-			inserted++
+		entries := make([]index.VectorEntry, len(req.GetVectors()))
+		for i, v := range req.GetVectors() {
+			entries[i] = index.VectorEntry{ID: v.GetId(), Values: v.GetValues(), Metadata: v.GetMetadata()}
+		}
+		n, err := s.engine.InsertBatch(ctx, coll, entries)
+		inserted += int64(n)
+		if err != nil {
+			return mapError(err)
 		}
 	}
 	return stream.SendAndClose(&apiv1.InsertBatchResponse{InsertedCount: inserted})
@@ -186,6 +189,46 @@ func (s *GRPCServer) Flush(ctx context.Context, req *apiv1.FlushRequest) (*apiv1
 		return nil, mapError(err)
 	}
 	return &apiv1.FlushResponse{SegmentsSealed: 1}, nil
+}
+
+// listIDs pagination bounds.
+const (
+	defaultListIDsPageSize = 1000
+	maxListIDsPageSize     = 10000
+)
+
+// ListIDs pages through a collection's live vector ids in bytewise
+// ascending order using keyset pagination on after_id.
+func (s *GRPCServer) ListIDs(_ context.Context, req *apiv1.ListIDsRequest) (*apiv1.ListIDsResponse, error) {
+	ids, err := s.engine.ListIDs(req.GetCollection())
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	pageSize := int(req.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = defaultListIDsPageSize
+	}
+	if pageSize > maxListIDsPageSize {
+		pageSize = maxListIDsPageSize
+	}
+
+	// ids is sorted; skip everything <= after_id.
+	start := 0
+	if after := req.GetAfterId(); after != "" {
+		start = sort.SearchStrings(ids, after)
+		if start < len(ids) && ids[start] == after {
+			start++
+		}
+	}
+	end := start + pageSize
+	if end > len(ids) {
+		end = len(ids)
+	}
+	return &apiv1.ListIDsResponse{
+		Ids:     ids[start:end],
+		HasMore: end < len(ids),
+	}, nil
 }
 
 // GetStats returns runtime stats for a collection.

@@ -1144,6 +1144,123 @@ func (x *GetStatsResponse) GetStats() *CollectionStats {
 	return nil
 }
 
+type ListIDsRequest struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Collection string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
+	// after_id returns ids strictly greater (bytewise) than this value;
+	// empty starts from the beginning.
+	AfterId string `protobuf:"bytes,2,opt,name=after_id,json=afterId,proto3" json:"after_id,omitempty"`
+	// page_size caps the number of ids returned; the server applies a
+	// default and an upper bound.
+	PageSize      int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListIDsRequest) Reset() {
+	*x = ListIDsRequest{}
+	mi := &file_v1_engine_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIDsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIDsRequest) ProtoMessage() {}
+
+func (x *ListIDsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_engine_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIDsRequest.ProtoReflect.Descriptor instead.
+func (*ListIDsRequest) Descriptor() ([]byte, []int) {
+	return file_v1_engine_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListIDsRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *ListIDsRequest) GetAfterId() string {
+	if x != nil {
+		return x.AfterId
+	}
+	return ""
+}
+
+func (x *ListIDsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+type ListIDsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ids   []string               `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
+	// has_more is true when ids remain after the last returned id.
+	HasMore       bool `protobuf:"varint,2,opt,name=has_more,json=hasMore,proto3" json:"has_more,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListIDsResponse) Reset() {
+	*x = ListIDsResponse{}
+	mi := &file_v1_engine_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListIDsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListIDsResponse) ProtoMessage() {}
+
+func (x *ListIDsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v1_engine_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListIDsResponse.ProtoReflect.Descriptor instead.
+func (*ListIDsResponse) Descriptor() ([]byte, []int) {
+	return file_v1_engine_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ListIDsResponse) GetIds() []string {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+func (x *ListIDsResponse) GetHasMore() bool {
+	if x != nil {
+		return x.HasMore
+	}
+	return false
+}
+
 var File_v1_engine_proto protoreflect.FileDescriptor
 
 const file_v1_engine_proto_rawDesc = "" +
@@ -1223,7 +1340,16 @@ const file_v1_engine_proto_rawDesc = "" +
 	"collection\x18\x01 \x01(\tR\n" +
 	"collection\"E\n" +
 	"\x10GetStatsResponse\x121\n" +
-	"\x05stats\x18\x01 \x01(\v2\x1b.turbodb.v1.CollectionStatsR\x05stats2\xf4\x06\n" +
+	"\x05stats\x18\x01 \x01(\v2\x1b.turbodb.v1.CollectionStatsR\x05stats\"h\n" +
+	"\x0eListIDsRequest\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x01 \x01(\tR\n" +
+	"collection\x12\x19\n" +
+	"\bafter_id\x18\x02 \x01(\tR\aafterId\x12\x1b\n" +
+	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\">\n" +
+	"\x0fListIDsResponse\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\x12\x19\n" +
+	"\bhas_more\x18\x02 \x01(\bR\ahasMore2\xb8\a\n" +
 	"\rTurboDBEngine\x12]\n" +
 	"\x10CreateCollection\x12#.turbodb.v1.CreateCollectionRequest\x1a$.turbodb.v1.CreateCollectionResponse\x12W\n" +
 	"\x0eDropCollection\x12!.turbodb.v1.DropCollectionRequest\x1a\".turbodb.v1.DropCollectionResponse\x12Z\n" +
@@ -1235,7 +1361,8 @@ const file_v1_engine_proto_rawDesc = "" +
 	"\x06Search\x12\x19.turbodb.v1.SearchRequest\x1a\x1a.turbodb.v1.SearchResponse\x12P\n" +
 	"\vSearchBatch\x12\x1e.turbodb.v1.SearchBatchRequest\x1a\x1f.turbodb.v1.SearchBatchResponse0\x01\x12<\n" +
 	"\x05Flush\x12\x18.turbodb.v1.FlushRequest\x1a\x19.turbodb.v1.FlushResponse\x12E\n" +
-	"\bGetStats\x12\x1b.turbodb.v1.GetStatsRequest\x1a\x1c.turbodb.v1.GetStatsResponseB.Z,github.com/gabrielleeyj/turbodb/api/v1;apiv1b\x06proto3"
+	"\bGetStats\x12\x1b.turbodb.v1.GetStatsRequest\x1a\x1c.turbodb.v1.GetStatsResponse\x12B\n" +
+	"\aListIDs\x12\x1a.turbodb.v1.ListIDsRequest\x1a\x1b.turbodb.v1.ListIDsResponseB.Z,github.com/gabrielleeyj/turbodb/api/v1;apiv1b\x06proto3"
 
 var (
 	file_v1_engine_proto_rawDescOnce sync.Once
@@ -1249,7 +1376,7 @@ func file_v1_engine_proto_rawDescGZIP() []byte {
 	return file_v1_engine_proto_rawDescData
 }
 
-var file_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_v1_engine_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_v1_engine_proto_goTypes = []any{
 	(*CreateCollectionRequest)(nil),    // 0: turbodb.v1.CreateCollectionRequest
 	(*CreateCollectionResponse)(nil),   // 1: turbodb.v1.CreateCollectionResponse
@@ -1274,18 +1401,20 @@ var file_v1_engine_proto_goTypes = []any{
 	(*FlushResponse)(nil),              // 20: turbodb.v1.FlushResponse
 	(*GetStatsRequest)(nil),            // 21: turbodb.v1.GetStatsRequest
 	(*GetStatsResponse)(nil),           // 22: turbodb.v1.GetStatsResponse
-	(*CollectionConfig)(nil),           // 23: turbodb.v1.CollectionConfig
-	(*Vector)(nil),                     // 24: turbodb.v1.Vector
-	(*SearchResult)(nil),               // 25: turbodb.v1.SearchResult
+	(*ListIDsRequest)(nil),             // 23: turbodb.v1.ListIDsRequest
+	(*ListIDsResponse)(nil),            // 24: turbodb.v1.ListIDsResponse
+	(*CollectionConfig)(nil),           // 25: turbodb.v1.CollectionConfig
+	(*Vector)(nil),                     // 26: turbodb.v1.Vector
+	(*SearchResult)(nil),               // 27: turbodb.v1.SearchResult
 }
 var file_v1_engine_proto_depIdxs = []int32{
-	23, // 0: turbodb.v1.CreateCollectionRequest.config:type_name -> turbodb.v1.CollectionConfig
-	23, // 1: turbodb.v1.ListCollectionsResponse.collections:type_name -> turbodb.v1.CollectionConfig
-	23, // 2: turbodb.v1.DescribeCollectionResponse.config:type_name -> turbodb.v1.CollectionConfig
+	25, // 0: turbodb.v1.CreateCollectionRequest.config:type_name -> turbodb.v1.CollectionConfig
+	25, // 1: turbodb.v1.ListCollectionsResponse.collections:type_name -> turbodb.v1.CollectionConfig
+	25, // 2: turbodb.v1.DescribeCollectionResponse.config:type_name -> turbodb.v1.CollectionConfig
 	8,  // 3: turbodb.v1.DescribeCollectionResponse.stats:type_name -> turbodb.v1.CollectionStats
-	24, // 4: turbodb.v1.InsertRequest.vector:type_name -> turbodb.v1.Vector
-	24, // 5: turbodb.v1.InsertBatchRequest.vectors:type_name -> turbodb.v1.Vector
-	25, // 6: turbodb.v1.SearchResponse.results:type_name -> turbodb.v1.SearchResult
+	26, // 4: turbodb.v1.InsertRequest.vector:type_name -> turbodb.v1.Vector
+	26, // 5: turbodb.v1.InsertBatchRequest.vectors:type_name -> turbodb.v1.Vector
+	27, // 6: turbodb.v1.SearchResponse.results:type_name -> turbodb.v1.SearchResult
 	15, // 7: turbodb.v1.SearchBatchRequest.queries:type_name -> turbodb.v1.SearchRequest
 	16, // 8: turbodb.v1.SearchBatchResponse.response:type_name -> turbodb.v1.SearchResponse
 	8,  // 9: turbodb.v1.GetStatsResponse.stats:type_name -> turbodb.v1.CollectionStats
@@ -1300,19 +1429,21 @@ var file_v1_engine_proto_depIdxs = []int32{
 	17, // 18: turbodb.v1.TurboDBEngine.SearchBatch:input_type -> turbodb.v1.SearchBatchRequest
 	19, // 19: turbodb.v1.TurboDBEngine.Flush:input_type -> turbodb.v1.FlushRequest
 	21, // 20: turbodb.v1.TurboDBEngine.GetStats:input_type -> turbodb.v1.GetStatsRequest
-	1,  // 21: turbodb.v1.TurboDBEngine.CreateCollection:output_type -> turbodb.v1.CreateCollectionResponse
-	3,  // 22: turbodb.v1.TurboDBEngine.DropCollection:output_type -> turbodb.v1.DropCollectionResponse
-	5,  // 23: turbodb.v1.TurboDBEngine.ListCollections:output_type -> turbodb.v1.ListCollectionsResponse
-	7,  // 24: turbodb.v1.TurboDBEngine.DescribeCollection:output_type -> turbodb.v1.DescribeCollectionResponse
-	10, // 25: turbodb.v1.TurboDBEngine.Insert:output_type -> turbodb.v1.InsertResponse
-	12, // 26: turbodb.v1.TurboDBEngine.InsertBatch:output_type -> turbodb.v1.InsertBatchResponse
-	14, // 27: turbodb.v1.TurboDBEngine.Delete:output_type -> turbodb.v1.DeleteResponse
-	16, // 28: turbodb.v1.TurboDBEngine.Search:output_type -> turbodb.v1.SearchResponse
-	18, // 29: turbodb.v1.TurboDBEngine.SearchBatch:output_type -> turbodb.v1.SearchBatchResponse
-	20, // 30: turbodb.v1.TurboDBEngine.Flush:output_type -> turbodb.v1.FlushResponse
-	22, // 31: turbodb.v1.TurboDBEngine.GetStats:output_type -> turbodb.v1.GetStatsResponse
-	21, // [21:32] is the sub-list for method output_type
-	10, // [10:21] is the sub-list for method input_type
+	23, // 21: turbodb.v1.TurboDBEngine.ListIDs:input_type -> turbodb.v1.ListIDsRequest
+	1,  // 22: turbodb.v1.TurboDBEngine.CreateCollection:output_type -> turbodb.v1.CreateCollectionResponse
+	3,  // 23: turbodb.v1.TurboDBEngine.DropCollection:output_type -> turbodb.v1.DropCollectionResponse
+	5,  // 24: turbodb.v1.TurboDBEngine.ListCollections:output_type -> turbodb.v1.ListCollectionsResponse
+	7,  // 25: turbodb.v1.TurboDBEngine.DescribeCollection:output_type -> turbodb.v1.DescribeCollectionResponse
+	10, // 26: turbodb.v1.TurboDBEngine.Insert:output_type -> turbodb.v1.InsertResponse
+	12, // 27: turbodb.v1.TurboDBEngine.InsertBatch:output_type -> turbodb.v1.InsertBatchResponse
+	14, // 28: turbodb.v1.TurboDBEngine.Delete:output_type -> turbodb.v1.DeleteResponse
+	16, // 29: turbodb.v1.TurboDBEngine.Search:output_type -> turbodb.v1.SearchResponse
+	18, // 30: turbodb.v1.TurboDBEngine.SearchBatch:output_type -> turbodb.v1.SearchBatchResponse
+	20, // 31: turbodb.v1.TurboDBEngine.Flush:output_type -> turbodb.v1.FlushResponse
+	22, // 32: turbodb.v1.TurboDBEngine.GetStats:output_type -> turbodb.v1.GetStatsResponse
+	24, // 33: turbodb.v1.TurboDBEngine.ListIDs:output_type -> turbodb.v1.ListIDsResponse
+	22, // [22:34] is the sub-list for method output_type
+	10, // [10:22] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1330,7 +1461,7 @@ func file_v1_engine_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v1_engine_proto_rawDesc), len(file_v1_engine_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   23,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
