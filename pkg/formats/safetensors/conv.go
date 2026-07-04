@@ -62,7 +62,7 @@ func float32ToFloat16(f float32) uint16 {
 		// Subnormal half.
 		mant |= 0x800000
 		shift := uint32(14 - exp)
-		half := uint16(mant >> shift)
+		half := uint16(mant >> shift) // #nosec G115 -- deliberate float16 bit narrowing
 		if mant&((1<<shift)-1) > (1 << (shift - 1)) {
 			half++ // round half up (simplified)
 		}

@@ -17,12 +17,12 @@ func (w *writer) u64(v uint64)  { w.buf = binary.LittleEndian.AppendUint64(w.buf
 func (w *writer) f32(v float32) { w.u32(math.Float32bits(v)) }
 
 func (w *writer) str(s string) {
-	w.u32(uint32(len(s)))
+	w.u32(uint32(len(s))) // #nosec G115 -- IPC strings are far below 4GiB
 	w.buf = append(w.buf, s...)
 }
 
 func (w *writer) vec(v []float32) {
-	w.u32(uint32(len(v)))
+	w.u32(uint32(len(v))) // #nosec G115 -- vector dim validated at the engine boundary
 	for _, x := range v {
 		w.f32(x)
 	}

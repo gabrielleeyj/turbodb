@@ -16,7 +16,7 @@ func openEngine(dataDir string) (*engine.Engine, error) {
 	if dataDir == "" {
 		return nil, fmt.Errorf("--data-dir is required")
 	}
-	return engine.New(engine.EngineConfig{DataDir: dataDir})
+	return engine.New(engine.Config{DataDir: dataDir})
 }
 
 func runImport(args []string) error {
@@ -45,7 +45,7 @@ func runImport(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	ctx := context.Background()
 	progress := newProgress(m.Rows)
@@ -81,7 +81,7 @@ func runExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	cfg, entries, err := eng.ExportCollection(*collection)
 	if err != nil {
@@ -91,10 +91,12 @@ func runExport(args []string) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", *output, err)
 	}
-	defer f.Close()
-
 	if err := ioformats.ExportSafeTensors(f, cfg, entries); err != nil {
+		_ = f.Close()
 		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", *output, err)
 	}
 	fmt.Fprintf(os.Stderr, "exported %d vectors from %q to %s\n", len(entries), *collection, *output)
 	return nil
@@ -151,9 +153,12 @@ func runConvert(args []string) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", *output, err)
 	}
-	defer f.Close()
 	if err := ioformats.ConvertSafeTensorsToGGUF(*input, f); err != nil {
+		_ = f.Close()
 		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", *output, err)
 	}
 	fmt.Fprintf(os.Stderr, "converted %s -> %s\n", *input, *output)
 	return nil

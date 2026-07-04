@@ -8,7 +8,7 @@ type SearchResult struct {
 
 // DeviceInfo holds GPU device information.
 type DeviceInfo struct {
-	FreeBytes  uint64
-	TotalBytes uint64
+	FreeBytes         uint64
+	TotalBytes        uint64
 	ComputeCapability int // major*10 + minor, e.g. 80 for A100
 }

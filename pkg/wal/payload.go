@@ -27,9 +27,9 @@ type DeletePayload struct {
 
 // SegmentSealedPayload describes a segment seal event.
 type SegmentSealedPayload struct {
-	Collection string
-	SegmentID  string
-	FilePath   string
+	Collection  string
+	SegmentID   string
+	FilePath    string
 	VectorCount uint64
 }
 
@@ -58,7 +58,7 @@ func EncodeInsert(p InsertPayload) ([]byte, error) {
 	buf = appendString(buf, p.Collection)
 	buf = appendString(buf, p.ID)
 
-	dim := uint32(len(p.Values))
+	dim := uint32(len(p.Values)) // #nosec G115 -- vector dim is validated at the engine boundary (<= 4096)
 	var dimBuf [4]byte
 	binary.LittleEndian.PutUint32(dimBuf[:], dim)
 	buf = append(buf, dimBuf[:]...)
@@ -208,7 +208,7 @@ func DecodeCheckpoint(b []byte) (CheckpointPayload, error) {
 // appendString appends a length-prefixed UTF-8 string.
 func appendString(buf []byte, s string) []byte {
 	var lenBuf [4]byte
-	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(s)))
+	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(s))) // #nosec G115 -- collection/id strings are far below 4GiB
 	buf = append(buf, lenBuf[:]...)
 	buf = append(buf, s...)
 	return buf
@@ -232,7 +232,7 @@ func readStringAt(b []byte, off int) (string, int, error) {
 // Keys are written in sorted order to make encoding deterministic.
 func appendMetadata(buf []byte, meta map[string]string) []byte {
 	var countBuf [2]byte
-	binary.LittleEndian.PutUint16(countBuf[:], uint16(len(meta)))
+	binary.LittleEndian.PutUint16(countBuf[:], uint16(len(meta))) // #nosec G115 -- metadata entry count is far below 64Ki
 	buf = append(buf, countBuf[:]...)
 
 	if len(meta) == 0 {

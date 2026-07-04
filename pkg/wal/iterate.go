@@ -53,15 +53,15 @@ func Iterate(dir string, opts IterateOptions, fn VisitFunc) error {
 // iterateFile reads records from a single file. Returns (stop, err) where stop
 // indicates the visitor signalled ErrStopIteration.
 func iterateFile(path string, opts IterateOptions, fn VisitFunc) (bool, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path derived from configured WAL dir
 	if err != nil {
 		return false, fmt.Errorf("wal: open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := bufio.NewReader(f)
 	for {
-		rec, _, err := readRecord(r)
+		rec, err := readRecord(r)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return false, nil
@@ -115,17 +115,17 @@ func LastCheckpointLSN(dir string) (uint64, error) {
 
 // scanFileForCheckpoint returns the highest checkpoint LSN within the file.
 func scanFileForCheckpoint(path string) (uint64, bool, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path derived from configured WAL dir
 	if err != nil {
 		return 0, false, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := bufio.NewReader(f)
 	var bestLSN uint64
 	var found bool
 	for {
-		rec, _, err := readRecord(r)
+		rec, err := readRecord(r)
 		if err != nil {
 			break
 		}

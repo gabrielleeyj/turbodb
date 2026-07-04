@@ -70,7 +70,7 @@ func (w *Writer) Declare(name string, typ GGMLType, dims []uint64, nbytes int64)
 		Name:   name,
 		Dims:   append([]uint64(nil), dims...),
 		Type:   typ,
-		Offset: uint64(offset),
+		Offset: uint64(offset), // #nosec G115 -- writer cursor is non-negative
 	}
 	w.sizes[name] = nbytes
 	w.order = append(w.order, name)
@@ -85,7 +85,7 @@ func (w *Writer) Commit() error {
 		return fmt.Errorf("gguf: already committed")
 	}
 	// Ensure general.alignment metadata reflects the chosen alignment.
-	w.SetMetadata(AlignmentKey, Uint32Value(uint32(w.alignment)))
+	w.SetMetadata(AlignmentKey, Uint32Value(uint32(w.alignment))) // #nosec G115 -- alignment is a small power of two
 
 	var buf bytes.Buffer
 	putU32(&buf, Magic)
@@ -102,7 +102,7 @@ func (w *Writer) Commit() error {
 	for _, name := range w.order {
 		ti := w.tensors[name]
 		putString(&buf, name)
-		putU32(&buf, uint32(len(ti.Dims)))
+		putU32(&buf, uint32(len(ti.Dims))) // #nosec G115 -- dim count is tiny
 		for _, d := range ti.Dims {
 			putU64(&buf, d)
 		}
@@ -139,7 +139,7 @@ func (w *Writer) WriteData(name string, data []byte) error {
 		return fmt.Errorf("gguf: tensor %q expects %d bytes, got %d", name, w.sizes[name], len(data))
 	}
 	// Pad from current data position up to this tensor's aligned offset.
-	target := int64(w.tensors[name].Offset)
+	target := int64(w.tensors[name].Offset) // #nosec G115 -- offsets come from the non-negative writer cursor
 	if pad := target - w.dataPos; pad > 0 {
 		if _, err := w.w.Write(make([]byte, pad)); err != nil {
 			return fmt.Errorf("gguf: write padding: %w", err)
@@ -191,13 +191,13 @@ func writeValue(buf *bytes.Buffer, v Value) error {
 func writeValueBody(buf *bytes.Buffer, v Value) error {
 	switch v.Type {
 	case mvUint8, mvInt8, mvBool:
-		buf.WriteByte(byte(v.Num))
+		buf.WriteByte(byte(v.Num)) // #nosec G115 -- narrowing per declared metadata value type
 	case mvUint16, mvInt16:
 		var b [2]byte
-		binary.LittleEndian.PutUint16(b[:], uint16(v.Num))
+		binary.LittleEndian.PutUint16(b[:], uint16(v.Num)) // #nosec G115 -- narrowing per declared metadata value type
 		buf.Write(b[:])
 	case mvUint32, mvInt32:
-		putU32(buf, uint32(v.Num))
+		putU32(buf, uint32(v.Num)) // #nosec G115 -- narrowing per declared metadata value type
 	case mvFloat32:
 		putU32(buf, float32bits(float32(v.F64)))
 	case mvUint64, mvInt64:

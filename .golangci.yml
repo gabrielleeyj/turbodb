@@ -10,28 +10,27 @@ formatters:
 
 linters:
   enable:
-    - errcheck
-    - govet
     - ineffassign
-    - staticcheck
-    - unused
     - misspell
     - unconvert
     - unparam
     - gosec
     - revive
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  revive:
+  settings:
+    revive:
+      rules:
+        - name: blank-imports
+        - name: exported
+        - name: unreachable-code
+        - name: dot-imports
+  exclusions:
     rules:
-      - name: blank-imports
-      - name: exported
-      - name: unreachable-code
-      - name: dot-imports
+      # Tests operate on synthetic data and local fixtures; gosec findings
+      # (weak rand, file perms, variable paths/subprocess) are not applicable.
+      - path: _test\.go
+        linters:
+          - gosec
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 50
   max-same-issues: 5

@@ -18,7 +18,7 @@ func peerUID(conn *net.UnixConn) (int, error) {
 	var uid int
 	var sockErr error
 	if cerr := raw.Control(func(fd uintptr) {
-		xucred, e := unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
+		xucred, e := unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED) // #nosec G115 -- fd fits in int on all supported platforms
 		if e != nil {
 			sockErr = e
 			return

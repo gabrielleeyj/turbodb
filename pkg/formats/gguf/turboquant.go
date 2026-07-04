@@ -45,9 +45,9 @@ func EncodeTurboQuantBlock(norm float32, seedOffset uint16, codes []uint8, b int
 		byteIdx := bitPos >> 3
 		bitOff := bitPos & 7
 		// Write up to b bits across at most two bytes (b<=8).
-		body[byteIdx] |= byte(v << bitOff)
+		body[byteIdx] |= byte(v << bitOff) // #nosec G115 -- deliberate bit packing
 		if bitOff+b > 8 {
-			body[byteIdx+1] |= byte(v >> (8 - bitOff))
+			body[byteIdx+1] |= byte(v >> (8 - bitOff)) // #nosec G115 -- deliberate bit packing
 		}
 		bitPos += b
 	}
@@ -75,7 +75,7 @@ func DecodeTurboQuantBlock(block []byte, b int) (norm float32, seedOffset uint16
 		if bitOff+b > 8 {
 			v |= uint16(body[byteIdx+1]) << (8 - bitOff)
 		}
-		codes[i] = uint8(v & mask)
+		codes[i] = uint8(v & mask) // #nosec G115 -- masked to bit width
 		bitPos += b
 	}
 	return norm, seedOffset, codes, nil

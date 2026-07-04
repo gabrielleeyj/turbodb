@@ -21,7 +21,17 @@ type TensorInfo struct {
 	Offset uint64 // relative to the start of the (aligned) data section
 }
 
-// numElements returns the product of the dimensions.
+// Bounds for values read from untrusted files. They keep all downstream
+// size arithmetic (element counts, byte lengths, file offsets) safely inside
+// int64 range.
+const (
+	maxTensorElems  = 1 << 48
+	maxTensorOffset = 1 << 62
+	maxAlignment    = 1 << 20
+)
+
+// numElements returns the product of the dimensions. Bounded by the
+// maxTensorElems check in readTensorInfo.
 func (ti TensorInfo) numElements() uint64 {
 	n := uint64(1)
 	for _, d := range ti.Dims {
@@ -93,7 +103,7 @@ func (c *cursor) str() string {
 
 // Open memory-maps... actually opens the GGUF file at path and parses it.
 func Open(path string) (*File, error) {
-	fh, err := os.Open(path)
+	fh, err := os.Open(path) // #nosec G304 -- caller-supplied path is this API's contract
 	if err != nil {
 		return nil, fmt.Errorf("gguf: open %q: %w", path, err)
 	}
@@ -141,8 +151,12 @@ func NewReader(src io.ReaderAt, size int64) (*File, error) {
 		f.metadata[key] = val
 	}
 	if a, ok := f.metadata[AlignmentKey]; ok {
-		if n, err := a.AsUint64(); err == nil && n > 0 {
-			f.alignment = int64(n)
+		n, err := a.AsUint64()
+		if err == nil && (n == 0 || n > maxAlignment || n&(n-1) != 0) {
+			return nil, fmt.Errorf("gguf: invalid alignment %d (must be a power of two <= %d)", n, maxAlignment)
+		}
+		if err == nil {
+			f.alignment = int64(n) // #nosec G115 -- bounded by maxAlignment above
 		}
 	}
 
@@ -179,7 +193,7 @@ func (f *File) computeRawLengths(dataLen int64) error {
 	}
 	ots := make([]ot, 0, len(f.tensors))
 	for name, ti := range f.tensors {
-		ots = append(ots, ot{name, int64(ti.Offset)})
+		ots = append(ots, ot{name, int64(ti.Offset)}) // #nosec G115 -- bounded by maxTensorOffset in readTensorInfo
 	}
 	sort.Slice(ots, func(i, j int) bool { return ots[i].offset < ots[j].offset })
 
@@ -265,6 +279,18 @@ func readTensorInfo(c *cursor) TensorInfo {
 	}
 	typ := GGMLType(c.u32())
 	off := c.u64()
+	elems := uint64(1)
+	for _, d := range dims {
+		if d != 0 && elems > maxTensorElems/d {
+			c.err = fmt.Errorf("gguf: tensor %q element count exceeds %d", name, uint64(maxTensorElems))
+			return TensorInfo{}
+		}
+		elems *= d
+	}
+	if off > maxTensorOffset {
+		c.err = fmt.Errorf("gguf: tensor %q offset %d exceeds %d", name, off, uint64(maxTensorOffset))
+		return TensorInfo{}
+	}
 	return TensorInfo{Name: name, Dims: dims, Type: typ, Offset: off}
 }
 
@@ -321,11 +347,13 @@ func (f *File) rawBytes(ti TensorInfo) (int64, error) {
 		return boundary, nil
 	}
 	n := ti.numElements()
-	if n%uint64(spec.elemsPerBlock) != 0 {
+	if n%uint64(spec.elemsPerBlock) != 0 { // #nosec G115 -- block specs are small positive constants
 		return 0, fmt.Errorf("gguf: tensor %q element count %d not a multiple of block %d",
 			ti.Name, n, spec.elemsPerBlock)
 	}
-	exact := int64(n/uint64(spec.elemsPerBlock)) * int64(spec.bytesPerBlock)
+	// n is bounded by maxTensorElems and block specs are small constants,
+	// so this product stays inside int64.
+	exact := int64(n/uint64(spec.elemsPerBlock)) * int64(spec.bytesPerBlock) // #nosec G115
 	if exact > boundary {
 		return 0, fmt.Errorf("gguf: tensor %q needs %d bytes but only %d available before next tensor",
 			ti.Name, exact, boundary)
@@ -344,7 +372,7 @@ func (f *File) Raw(name string) ([]byte, error) {
 		return nil, err
 	}
 	buf := make([]byte, nbytes)
-	if _, err := f.src.ReadAt(buf, f.dataBase+int64(ti.Offset)); err != nil {
+	if _, err := f.src.ReadAt(buf, f.dataBase+int64(ti.Offset)); err != nil { // #nosec G115 -- bounded by maxTensorOffset in readTensorInfo
 		return nil, fmt.Errorf("gguf: read tensor %q: %w", name, err)
 	}
 	return buf, nil
@@ -360,7 +388,7 @@ func (f *File) Float32(name string) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dequantize(ti.Type, raw, int(ti.numElements()))
+	return dequantize(ti.Type, raw, int(ti.numElements())) // #nosec G115 -- bounded by maxTensorElems in readTensorInfo
 }
 
 // Close releases the file handle if File was created via Open.

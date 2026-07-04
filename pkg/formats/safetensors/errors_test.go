@@ -92,7 +92,7 @@ func TestTensorNotFound(t *testing.T) {
 	}
 }
 
-func TestFloat16SpecialValues(t *testing.T) {
+func TestFloat16SpecialValues(_ *testing.T) {
 	// Inf, -Inf, zero, subnormal-ish small values exercise the special paths.
 	cases := []uint16{0x0000, 0x8000, 0x7c00, 0xfc00, 0x0001, 0x03ff}
 	for _, h := range cases {

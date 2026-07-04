@@ -39,8 +39,8 @@ func newTestGrowingSegment(t *testing.T) *GrowingSegment {
 	return seg
 }
 
-func randomVec(rng *rand.Rand, dim int) []float32 {
-	v := make([]float32, dim)
+func randomVec(rng *rand.Rand) []float32 {
+	v := make([]float32, testDim)
 	for i := range v {
 		v[i] = float32(rng.NormFloat64())
 	}
@@ -54,7 +54,7 @@ func TestGrowingSegmentInsertAndCount(t *testing.T) {
 	for i := range 100 {
 		err := seg.Insert(VectorEntry{
 			ID:     fmt.Sprintf("vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		})
 		if err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
@@ -70,7 +70,7 @@ func TestGrowingSegmentDuplicateID(t *testing.T) {
 	seg := newTestGrowingSegment(t)
 	rng := rand.New(rand.NewPCG(1, 2))
 
-	v := randomVec(rng, testDim)
+	v := randomVec(rng)
 	if err := seg.Insert(VectorEntry{ID: "dup", Values: v}); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestGrowingSegmentContains(t *testing.T) {
 	seg := newTestGrowingSegment(t)
 	rng := rand.New(rand.NewPCG(1, 2))
 
-	if err := seg.Insert(VectorEntry{ID: "exists", Values: randomVec(rng, testDim)}); err != nil {
+	if err := seg.Insert(VectorEntry{ID: "exists", Values: randomVec(rng)}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,14 +121,14 @@ func TestGrowingSegmentSearch(t *testing.T) {
 	for i := range 50 {
 		err := seg.Insert(VectorEntry{
 			ID:     fmt.Sprintf("vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		})
 		if err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
 		}
 	}
 
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := seg.Search(query, 5, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
@@ -154,7 +154,7 @@ func TestGrowingSegmentSearchWithTombstones(t *testing.T) {
 	for i := range 10 {
 		err := seg.Insert(VectorEntry{
 			ID:     fmt.Sprintf("vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -165,7 +165,7 @@ func TestGrowingSegmentSearchWithTombstones(t *testing.T) {
 	tombstones.Delete("vec-0")
 	tombstones.Delete("vec-1")
 
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := seg.Search(query, 20, tombstones)
 	if err != nil {
 		t.Fatal(err)
@@ -188,12 +188,12 @@ func TestGrowingSegmentSearchTopKGreaterThanCount(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 
 	for i := range 3 {
-		if err := seg.Insert(VectorEntry{ID: fmt.Sprintf("v%d", i), Values: randomVec(rng, testDim)}); err != nil {
+		if err := seg.Insert(VectorEntry{ID: fmt.Sprintf("v%d", i), Values: randomVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	results, err := seg.Search(randomVec(rng, testDim), 10, nil)
+	results, err := seg.Search(randomVec(rng), 10, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestGrowingSegmentConcurrentInserts(t *testing.T) {
 			rng := rand.New(rand.NewPCG(uint64(i), uint64(i+1000)))
 			err := seg.Insert(VectorEntry{
 				ID:     fmt.Sprintf("concurrent-%d", i),
-				Values: randomVec(rng, testDim),
+				Values: randomVec(rng),
 			})
 			if err != nil {
 				errs <- err

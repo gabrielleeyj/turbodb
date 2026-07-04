@@ -60,7 +60,7 @@ func NewServer(handler Handler, cfg ServerConfig) *Server {
 // stale socket file.
 func (s *Server) Listen() error {
 	if dir := filepath.Dir(s.cfg.SocketPath); dir != "." && dir != "/" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("pgproto: create socket dir: %w", err)
 		}
 	}
@@ -154,7 +154,7 @@ type connState struct {
 // handleConn drives one connection's request/reply loop.
 func (s *Server) handleConn(ctx context.Context, conn net.Conn) {
 	defer s.untrack(conn)
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	st := &connState{}
 	for {

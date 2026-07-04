@@ -32,7 +32,7 @@ func newTestCollection(t *testing.T, sealThreshold int) *Collection {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
 
@@ -43,7 +43,7 @@ func TestCollectionInsertAndSearch(t *testing.T) {
 	for i := range 50 {
 		err := c.Insert(VectorEntry{
 			ID:     fmt.Sprintf("vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		})
 		if err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
@@ -55,7 +55,7 @@ func TestCollectionInsertAndSearch(t *testing.T) {
 		t.Fatalf("VectorCount: got %d, want 50", stats.VectorCount)
 	}
 
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := c.Search(query, 5)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
@@ -78,7 +78,7 @@ func TestCollectionDelete(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 
 	for i := range 10 {
-		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("v%d", i), Values: randomVec(rng, testDim)}); err != nil {
+		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("v%d", i), Values: randomVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -88,7 +88,7 @@ func TestCollectionDelete(t *testing.T) {
 	}
 
 	// Search should not return deleted vector.
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := c.Search(query, 20)
 	if err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestCollectionDuplicateID(t *testing.T) {
 	c := newTestCollection(t, 1000)
 	rng := rand.New(rand.NewPCG(1, 2))
 
-	v := randomVec(rng, testDim)
+	v := randomVec(rng)
 	if err := c.Insert(VectorEntry{ID: "dup", Values: v}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestCollectionFlush(t *testing.T) {
 	rng := rand.New(rand.NewPCG(1, 2))
 
 	for i := range 20 {
-		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("f%d", i), Values: randomVec(rng, testDim)}); err != nil {
+		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("f%d", i), Values: randomVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -151,7 +151,7 @@ func TestCollectionFlush(t *testing.T) {
 	}
 
 	// Search should still work across sealed segment.
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := c.Search(query, 5)
 	if err != nil {
 		t.Fatal(err)
@@ -170,7 +170,7 @@ func TestCollectionAutoSeal(t *testing.T) {
 	for i := range threshold + 5 {
 		if err := c.Insert(VectorEntry{
 			ID:     fmt.Sprintf("auto-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		}); err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
 		}
@@ -196,7 +196,7 @@ func TestCollectionSearchAcrossSegments(t *testing.T) {
 
 	// Insert vectors, flush to create a sealed segment, then insert more.
 	for i := range 20 {
-		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("batch1-%d", i), Values: randomVec(rng, testDim)}); err != nil {
+		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("batch1-%d", i), Values: randomVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -205,7 +205,7 @@ func TestCollectionSearchAcrossSegments(t *testing.T) {
 	}
 
 	for i := range 20 {
-		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("batch2-%d", i), Values: randomVec(rng, testDim)}); err != nil {
+		if err := c.Insert(VectorEntry{ID: fmt.Sprintf("batch2-%d", i), Values: randomVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -215,7 +215,7 @@ func TestCollectionSearchAcrossSegments(t *testing.T) {
 		t.Fatalf("VectorCount: got %d, want 40", stats.VectorCount)
 	}
 
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	results, err := c.Search(query, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestCollectionConcurrentInsertSearch(t *testing.T) {
 			rng := rand.New(rand.NewPCG(uint64(i), uint64(i+500)))
 			err := c.Insert(VectorEntry{
 				ID:     fmt.Sprintf("cc-%d", i),
-				Values: randomVec(rng, testDim),
+				Values: randomVec(rng),
 			})
 			if err != nil {
 				t.Errorf("concurrent insert %d: %v", i, err)
@@ -267,7 +267,7 @@ func TestCollectionConcurrentInsertSearch(t *testing.T) {
 		go func() {
 			defer searchWg.Done()
 			rng := rand.New(rand.NewPCG(uint64(i+100), uint64(i+600)))
-			results, err := c.Search(randomVec(rng, testDim), 5)
+			results, err := c.Search(randomVec(rng), 5)
 			if err != nil {
 				t.Errorf("concurrent search %d: %v", i, err)
 				return

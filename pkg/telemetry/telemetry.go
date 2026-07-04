@@ -45,10 +45,10 @@ type StatsSource interface {
 type Metrics struct {
 	registry *prometheus.Registry
 
-	searchLatency    prometheus.Histogram
-	insertCount      prometheus.Counter
-	segmentsSealed   prometheus.Counter
-	walFsyncLatency  prometheus.Histogram
+	searchLatency   prometheus.Histogram
+	insertCount     prometheus.Counter
+	segmentsSealed  prometheus.Counter
+	walFsyncLatency prometheus.Histogram
 }
 
 // Options controls metrics construction.

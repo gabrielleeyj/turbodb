@@ -38,21 +38,21 @@ func TestCClientWireCompatibility(t *testing.T) {
 	}
 
 	// Start the engine + IPC server.
-	eng, err := engine.New(engine.EngineConfig{DataDir: filepath.Join(t.TempDir(), "data")})
+	eng, err := engine.New(engine.Config{DataDir: filepath.Join(t.TempDir(), "data")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("tq-cwire-%d.sock", time.Now().UnixNano()))
-	t.Cleanup(func() { os.Remove(sock) })
+	t.Cleanup(func() { _ = os.Remove(sock) })
 	srv := pgproto.NewServer(NewAdapter(eng), pgproto.ServerConfig{SocketPath: sock, AllowedUID: -1})
 	if err := srv.Listen(); err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve(context.Background())
-	t.Cleanup(func() { srv.Close() })
+	go func() { _ = srv.Serve(context.Background()) }()
+	t.Cleanup(func() { _ = srv.Close() })
 	// Wait for the socket.
-	dialWithRetry(t, sock).Close()
+	_ = dialWithRetry(t, sock).Close()
 
 	out, err := exec.Command(bin, sock).CombinedOutput()
 	if err != nil {

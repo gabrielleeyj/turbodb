@@ -187,7 +187,7 @@ func TestOpenMmap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	x, err := f.Tensor("x")
 	if err != nil {
 		t.Fatal(err)

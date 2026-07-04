@@ -28,9 +28,9 @@ type SealedSegment struct {
 	norms []float32
 
 	// Quantizer components (needed for search dequantization).
-	rotator  rotation.Rotator
-	cb       *codebook.Codebook
-	mseQ     *quantizer.MSEQuantizer
+	rotator rotation.Rotator
+	cb      *codebook.Codebook
+	mseQ    *quantizer.MSEQuantizer
 
 	createdAt time.Time
 	sealedAt  time.Time
@@ -63,7 +63,6 @@ func Seal(id string, entries []VectorEntry, cfg SealedSegmentConfig) (*SealedSeg
 		return nil, fmt.Errorf("seal: create quantizer: %w", err)
 	}
 
-	codes := make([]quantizer.Code, len(entries))
 	ids := make([]string, len(entries))
 	norms := make([]float32, len(entries))
 
@@ -74,7 +73,7 @@ func Seal(id string, entries []VectorEntry, cfg SealedSegmentConfig) (*SealedSeg
 		rawVectors[i] = e.Values
 	}
 
-	codes, err = quantizer.BatchQuantize(context.TODO(), mseQ, rawVectors)
+	codes, err := quantizer.BatchQuantize(context.TODO(), mseQ, rawVectors)
 	if err != nil {
 		return nil, fmt.Errorf("seal: batch quantize: %w", err)
 	}

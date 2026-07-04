@@ -7,21 +7,6 @@ import (
 	"testing"
 )
 
-// buildGGUF writes a small GGUF with the given tensors and returns the bytes.
-func buildGGUF(t *testing.T, alignment int64, meta map[string]Value, decl func(*Writer)) []byte {
-	t.Helper()
-	var buf bytes.Buffer
-	w := NewWriter(&buf)
-	if alignment > 0 {
-		w.SetAlignment(alignment)
-	}
-	for k, v := range meta {
-		w.SetMetadata(k, v)
-	}
-	decl(w)
-	return buf.Bytes()
-}
-
 func TestWriteReadRoundTrip(t *testing.T) {
 	// Arrange: two F16 tensors plus a custom TurboQuant tensor (last, so its
 	// boundary length equals its exact size with no trailing pad).

@@ -25,7 +25,7 @@ func newTestSealedSegment(t *testing.T, n int) *SealedSegment {
 	for i := range n {
 		entries[i] = VectorEntry{
 			ID:     fmt.Sprintf("sealed-vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		}
 	}
 
@@ -70,7 +70,7 @@ func TestSealedSegmentContains(t *testing.T) {
 func TestSealedSegmentSearch(t *testing.T) {
 	seg := newTestSealedSegment(t, 100)
 	rng := rand.New(rand.NewPCG(99, 100))
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 
 	results, err := seg.Search(query, 5, nil)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestSealedSegmentSearch(t *testing.T) {
 func TestSealedSegmentSearchWithTombstones(t *testing.T) {
 	seg := newTestSealedSegment(t, 20)
 	rng := rand.New(rand.NewPCG(99, 100))
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 
 	tombstones := NewTombstoneLog()
 	tombstones.Delete("sealed-vec-0")
@@ -132,7 +132,7 @@ func TestSealedSegmentSearchRecallVsGrowing(t *testing.T) {
 	for i := range 200 {
 		entries[i] = VectorEntry{
 			ID:     fmt.Sprintf("v%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		}
 	}
 
@@ -159,7 +159,7 @@ func TestSealedSegmentSearchRecallVsGrowing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	topK := 10
 	growingResults, _ := growing.Search(query, topK, nil)
 	sealedResults, _ := sealed.Search(query, topK, nil)

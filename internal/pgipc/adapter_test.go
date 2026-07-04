@@ -16,23 +16,23 @@ import (
 // BUILD_BEGIN -> BUILD_VECTOR* -> BUILD_COMMIT -> SEARCH -> STATS, mirroring the
 // pg_turboquant access-method flow.
 func TestAdapterEndToEnd(t *testing.T) {
-	eng, err := engine.New(engine.EngineConfig{DataDir: filepath.Join(t.TempDir(), "data")})
+	eng, err := engine.New(engine.Config{DataDir: filepath.Join(t.TempDir(), "data")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("tq-ipc-%d.sock", time.Now().UnixNano()))
-	t.Cleanup(func() { os.Remove(sock) })
+	t.Cleanup(func() { _ = os.Remove(sock) })
 	srv := pgproto.NewServer(NewAdapter(eng), pgproto.ServerConfig{SocketPath: sock, AllowedUID: -1})
 	if err := srv.Listen(); err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve(context.Background())
-	t.Cleanup(func() { srv.Close() })
+	go func() { _ = srv.Serve(context.Background()) }()
+	t.Cleanup(func() { _ = srv.Close() })
 
 	c := dialWithRetry(t, sock)
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	const dim = 8
 	if err := c.BuildBegin(pgproto.BuildBegin{Collection: "idx", Dim: dim, BitWidth: 4}); err != nil {
@@ -95,11 +95,11 @@ func dialWithRetry(t *testing.T, sock string) *pgproto.Client {
 }
 
 func TestAdapterIdempotentBuildBeginAndErrors(t *testing.T) {
-	eng, err := engine.New(engine.EngineConfig{DataDir: filepath.Join(t.TempDir(), "data")})
+	eng, err := engine.New(engine.Config{DataDir: filepath.Join(t.TempDir(), "data")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 	a := NewAdapter(eng)
 	ctx := context.Background()
 

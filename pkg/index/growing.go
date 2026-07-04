@@ -208,10 +208,10 @@ func innerProduct(a, b []float32) float32 {
 // Used to efficiently maintain the top-K results.
 type minHeap []SearchResult
 
-func (h minHeap) Len() int            { return len(h) }
-func (h minHeap) Less(i, j int) bool  { return h[i].Score < h[j].Score }
-func (h minHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
-func (h *minHeap) Push(x any) { *h = append(*h, x.(SearchResult)) }
+func (h minHeap) Len() int           { return len(h) }
+func (h minHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
+func (h minHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *minHeap) Push(x any)        { *h = append(*h, x.(SearchResult)) }
 func (h *minHeap) Pop() any {
 	old := *h
 	n := len(old)

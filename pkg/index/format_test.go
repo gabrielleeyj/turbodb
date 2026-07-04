@@ -27,7 +27,7 @@ func TestSegmentFileRoundTrip(t *testing.T) {
 	for i := range n {
 		entries[i] = VectorEntry{
 			ID:     fmt.Sprintf("rt-vec-%d", i),
-			Values: randomVec(rng, testDim),
+			Values: randomVec(rng),
 		}
 	}
 
@@ -102,7 +102,7 @@ func TestSegmentFileRoundTrip(t *testing.T) {
 	}
 
 	// Verify search produces identical results.
-	query := randomVec(rng, testDim)
+	query := randomVec(rng)
 	origResults, err := original.Search(query, 5, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestSegmentFileCRCCorruption(t *testing.T) {
 	cb, _ := codebook.Load(testDim, testBitWidth)
 
 	rng := rand.New(rand.NewPCG(77, 88))
-	entries := []VectorEntry{{ID: "corrupt-1", Values: randomVec(rng, testDim)}}
+	entries := []VectorEntry{{ID: "corrupt-1", Values: randomVec(rng)}}
 
 	seg, _ := Seal("corrupt", entries, SealedSegmentConfig{
 		ID: "corrupt", Dim: testDim, BitWidth: testBitWidth,

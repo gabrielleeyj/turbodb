@@ -63,8 +63,8 @@ func (c CollectionConfig) Validate() error {
 	return nil
 }
 
-// EngineConfig configures the Engine.
-type EngineConfig struct {
+// Config configures the Engine.
+type Config struct {
 	// DataDir holds collection metadata, sealed segments, and the WAL.
 	DataDir string
 	// SealThreshold is the number of vectors per growing segment before auto-seal.
@@ -79,7 +79,7 @@ type EngineConfig struct {
 }
 
 // Validate ensures the engine config has the minimum required fields.
-func (c EngineConfig) Validate() error {
+func (c Config) Validate() error {
 	if c.DataDir == "" {
 		return fmt.Errorf("engine: DataDir must not be empty")
 	}
@@ -108,7 +108,7 @@ func configPath(dataDir, name string) string {
 
 // saveCollectionConfig writes a collection config to disk atomically.
 func saveCollectionConfig(dataDir string, cfg CollectionConfig) error {
-	if err := os.MkdirAll(configsDir(dataDir), 0o755); err != nil {
+	if err := os.MkdirAll(configsDir(dataDir), 0o750); err != nil {
 		return fmt.Errorf("engine: create configs dir: %w", err)
 	}
 	path := configPath(dataDir, cfg.Name)
@@ -118,7 +118,7 @@ func saveCollectionConfig(dataDir string, cfg CollectionConfig) error {
 	if err != nil {
 		return fmt.Errorf("engine: marshal config: %w", err)
 	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("engine: write tmp config: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -153,7 +153,7 @@ func loadCollectionConfigs(dataDir string) ([]CollectionConfig, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- path derived from configured data dir
 		if err != nil {
 			return nil, fmt.Errorf("engine: read %s: %w", path, err)
 		}

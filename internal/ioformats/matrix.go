@@ -13,6 +13,7 @@ import (
 // Format identifies a supported tensor file format.
 type Format string
 
+// Supported tensor file formats.
 const (
 	FormatSafeTensors Format = "safetensors"
 	FormatGGUF        Format = "gguf"
@@ -49,7 +50,7 @@ func readSafeTensorsMatrix(path, tensorName string) (Matrix, error) {
 	if err != nil {
 		return Matrix{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	name := tensorName
 	if name == "" {
@@ -86,7 +87,7 @@ func readGGUFMatrix(path, tensorName string) (Matrix, error) {
 	if err != nil {
 		return Matrix{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, ok := f.Info(tensorName)
 	if !ok {
@@ -97,10 +98,10 @@ func readGGUFMatrix(path, tensorName string) (Matrix, error) {
 	if len(info.Dims) == 0 {
 		return Matrix{}, fmt.Errorf("ioformats: tensor %q has no dimensions", tensorName)
 	}
-	dim := int(info.Dims[0])
+	dim := int(info.Dims[0]) // #nosec G115 -- gguf reader bounds element counts to 2^48
 	total := 1
 	for _, d := range info.Dims {
-		total *= int(d)
+		total *= int(d) // #nosec G115 -- gguf reader bounds element counts to 2^48
 	}
 	if dim <= 0 || total%dim != 0 {
 		return Matrix{}, fmt.Errorf("ioformats: tensor %q dims %v not a 2D matrix", tensorName, info.Dims)

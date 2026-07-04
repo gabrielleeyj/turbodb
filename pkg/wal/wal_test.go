@@ -97,7 +97,7 @@ func TestLSNMonotonicAndRecovery(t *testing.T) {
 
 	// Reopen; nextLSN should resume after the last record.
 	w2 := mustOpen(t, dir)
-	defer w2.Close()
+	defer func() { _ = w2.Close() }()
 	if got := w2.NextLSN(); got != 6 {
 		t.Errorf("NextLSN after reopen = %d, want 6", got)
 	}
@@ -163,7 +163,7 @@ func TestIterateFromLSN(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	var seen []uint64
 	if err := Iterate(dir, IterateOptions{FromLSN: 5}, func(r Record) error {
@@ -193,10 +193,10 @@ func TestStopIteration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	var count int
-	err := Iterate(dir, IterateOptions{}, func(r Record) error {
+	err := Iterate(dir, IterateOptions{}, func(_ Record) error {
 		count++
 		if count == 3 {
 			return ErrStopIteration
@@ -265,7 +265,7 @@ func TestCheckpointAndTruncate(t *testing.T) {
 	if len(filesAfter) >= len(filesBefore) {
 		t.Errorf("expected fewer files after truncate: before=%d after=%d", len(filesBefore), len(filesAfter))
 	}
-	w.Close()
+	_ = w.Close()
 }
 
 func TestGroupCommit(t *testing.T) {
@@ -300,10 +300,10 @@ func TestGroupCommit(t *testing.T) {
 			t.Fatalf("writer %d: %v", i, e)
 		}
 	}
-	w.Close()
+	_ = w.Close()
 
 	var count int
-	if err := Iterate(dir, IterateOptions{}, func(r Record) error { count++; return nil }); err != nil {
+	if err := Iterate(dir, IterateOptions{}, func(_ Record) error { count++; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	if count != writers*perWriter {
@@ -341,11 +341,11 @@ func TestRecoveryAfterPartialWrite(t *testing.T) {
 	if _, err := f.Write([]byte{0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01}); err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Recovery should read the 5 valid records and stop at the corruption.
 	var count int
-	if err := Iterate(dir, IterateOptions{}, func(r Record) error { count++; return nil }); err != nil {
+	if err := Iterate(dir, IterateOptions{}, func(_ Record) error { count++; return nil }); err != nil {
 		t.Fatalf("Iterate: %v", err)
 	}
 	if count != 5 {
@@ -353,7 +353,7 @@ func TestRecoveryAfterPartialWrite(t *testing.T) {
 	}
 
 	// With StopOnCorruption, expect an error.
-	err = Iterate(dir, IterateOptions{StopOnCorruption: true}, func(r Record) error { return nil })
+	err = Iterate(dir, IterateOptions{StopOnCorruption: true}, func(_ Record) error { return nil })
 	if err == nil || !errors.Is(err, ErrCorruptRecord) {
 		t.Errorf("expected ErrCorruptRecord, got %v", err)
 	}
@@ -381,7 +381,7 @@ func TestEmptyDirOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if got := w.NextLSN(); got != 1 {
 		t.Errorf("NextLSN on empty WAL = %d, want 1", got)
 	}

@@ -35,13 +35,13 @@ func TestMetricsExposition(t *testing.T) {
 	for i := 0; i < inserts; i++ {
 		if err := e.Insert(t.Context(), "metrics", index.VectorEntry{
 			ID:     "v" + string(rune('a'+i)),
-			Values: randVec(rng, testDim),
+			Values: randVec(rng),
 		}); err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
 		}
 	}
 
-	if _, _, err := e.Search(t.Context(), "metrics", randVec(rng, testDim), search.Options{TopK: 4}); err != nil {
+	if _, _, err := e.Search(t.Context(), "metrics", randVec(rng), search.Options{TopK: 4}); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestMetricsExposition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scrape: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("scrape status: got %d, want 200", resp.StatusCode)
 	}
@@ -87,7 +87,7 @@ func TestMetricsHandlerNilSafe(t *testing.T) {
 	}
 	if err := e.Insert(t.Context(), "nilmetrics", index.VectorEntry{
 		ID:     "v0",
-		Values: randVec(rand.New(rand.NewPCG(7, 8)), testDim),
+		Values: randVec(rand.New(rand.NewPCG(7, 8))),
 	}); err != nil {
 		t.Fatalf("Insert: %v", err)
 	}

@@ -25,7 +25,7 @@ func Inspect(format Format, path string) (tensors []TensorSummary, metadata map[
 		if oerr != nil {
 			return nil, nil, oerr
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		for _, name := range f.Names() {
 			info, _ := f.Info(name)
 			tensors = append(tensors, TensorSummary{Name: name, Dtype: string(info.Dtype), Shape: info.Shape})
@@ -36,12 +36,12 @@ func Inspect(format Format, path string) (tensors []TensorSummary, metadata map[
 		if oerr != nil {
 			return nil, nil, oerr
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		for _, name := range f.Names() {
 			info, _ := f.Info(name)
 			shape := make([]int64, len(info.Dims))
 			for i, d := range info.Dims {
-				shape[i] = int64(d)
+				shape[i] = int64(d) // #nosec G115 -- gguf reader bounds element counts to 2^48
 			}
 			tensors = append(tensors, TensorSummary{Name: name, Dtype: info.Type.String(), Shape: shape})
 		}
@@ -67,7 +67,7 @@ func ConvertSafeTensorsToGGUF(in string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	w := gguf.NewWriter(out)
 	w.SetMetadata("general.architecture", gguf.StringValue("turboquant-export"))
@@ -114,7 +114,7 @@ func safetensorsToGGML(d safetensors.Dtype) gguf.GGMLType {
 func reverseDims(shape []int64) []uint64 {
 	out := make([]uint64, len(shape))
 	for i, d := range shape {
-		out[len(shape)-1-i] = uint64(d)
+		out[len(shape)-1-i] = uint64(d) // #nosec G115 -- safetensors reader rejects negative dims
 	}
 	return out
 }

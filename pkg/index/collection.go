@@ -61,10 +61,10 @@ type Collection struct {
 	onSealed      func(segmentID string, vectors int, pinnedBytes int64)
 
 	// Sealing coordination.
-	sealCh   chan sealRequest
+	sealCh    chan sealRequest
 	pendingWg sync.WaitGroup // Tracks in-flight seal operations.
-	cancelF  context.CancelFunc
-	wg       sync.WaitGroup
+	cancelF   context.CancelFunc
+	wg        sync.WaitGroup
 }
 
 type sealRequest struct {

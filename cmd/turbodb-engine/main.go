@@ -51,7 +51,7 @@ func run() error {
 
 	// Engine first; pass it as the StatsSource for metrics so the gauges
 	// reflect live state. Metrics are wired back in after construction.
-	eng, err := engine.New(engine.EngineConfig{
+	eng, err := engine.New(engine.Config{
 		DataDir: *dataDir,
 		Logger:  logger,
 	})

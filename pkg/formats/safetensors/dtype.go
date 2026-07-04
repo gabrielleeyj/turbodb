@@ -19,6 +19,7 @@ import "fmt"
 // Dtype enumerates the tensor element types defined by the SafeTensors spec.
 type Dtype string
 
+// Element types defined by the SafeTensors specification.
 const (
 	F64  Dtype = "F64"
 	F32  Dtype = "F32"

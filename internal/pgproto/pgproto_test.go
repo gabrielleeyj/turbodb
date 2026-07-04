@@ -118,39 +118,39 @@ func (h *fakeHandler) Stats(_ context.Context, _ string) (StatsReply, error) {
 	return StatsReply{VectorCount: uint64(len(h.inserts))}, nil
 }
 
-func startTestServer(t *testing.T, h Handler) (*Server, string) {
+func startTestServer(t *testing.T, h Handler) string {
 	t.Helper()
 	// Unix socket paths are capped (~104 bytes on macOS); use a short path
 	// under the system temp dir rather than the long per-test temp dir.
 	sock := filepath.Join(os.TempDir(), fmt.Sprintf("tq-%d.sock", time.Now().UnixNano()))
-	t.Cleanup(func() { os.Remove(sock) })
+	t.Cleanup(func() { _ = os.Remove(sock) })
 	srv := NewServer(h, ServerConfig{SocketPath: sock, AllowedUID: -1})
 	if err := srv.Listen(); err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve(context.Background())
+	go func() { _ = srv.Serve(context.Background()) }()
 	// Wait for the socket to be connectable.
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		if c, err := Dial(sock); err == nil {
-			c.Close()
+			_ = c.Close()
 			break
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Cleanup(func() { srv.Close() })
-	return srv, sock
+	t.Cleanup(func() { _ = srv.Close() })
+	return sock
 }
 
 func TestClientServerFlow(t *testing.T) {
 	h := &fakeHandler{results: []ResultMsg{{TID: 1, Score: 0.9}, {TID: 2, Score: 0.8}}}
-	_, sock := startTestServer(t, h)
+	sock := startTestServer(t, h)
 
 	c, err := Dial(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	if err := c.BuildBegin(BuildBegin{Collection: "docs", Dim: 4, BitWidth: 4}); err != nil {
 		t.Fatal(err)
@@ -191,12 +191,12 @@ func TestClientServerFlow(t *testing.T) {
 }
 
 func TestServerRequiresActiveCollection(t *testing.T) {
-	_, sock := startTestServer(t, &fakeHandler{})
+	sock := startTestServer(t, &fakeHandler{})
 	c, err := Dial(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	// Insert before any BuildBegin/SearchBegin must error.
 	if err := c.Insert(VectorMsg{TID: 1, Values: []float32{1}}); err == nil {
 		t.Error("expected no-active-collection error")
@@ -212,12 +212,12 @@ func (h *errHandler) Search(_ context.Context, _ SearchBegin) ([]ResultMsg, erro
 }
 
 func TestServerErrorReply(t *testing.T) {
-	_, sock := startTestServer(t, &errHandler{})
+	sock := startTestServer(t, &errHandler{})
 	c, err := Dial(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if _, err := c.Search(SearchBegin{Collection: "c", Query: []float32{1}, TopK: 1}); err == nil || err.Error() != "boom" {
 		t.Fatalf("expected boom error, got %v", err)
 	}
@@ -255,12 +255,12 @@ func TestErrorPayloadRoundTrip(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	_, sock := startTestServer(t, &fakeHandler{})
+	sock := startTestServer(t, &fakeHandler{})
 	c, err := Dial(sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if err := c.Shutdown(); err != nil {
 		t.Fatal(err)
 	}

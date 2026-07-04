@@ -33,7 +33,7 @@ var ErrCollectionExists = errors.New("engine: collection already exists")
 // Engine coordinates collections, the write-ahead log, and persisted state.
 // It is safe for concurrent use.
 type Engine struct {
-	cfg     EngineConfig
+	cfg     Config
 	logger  *slog.Logger
 	metrics atomic.Pointer[telemetry.Metrics]
 	tracer  trace.Tracer
@@ -67,17 +67,17 @@ type collectionState struct {
 //  2. Instantiate empty Collection objects with matching rotator + codebook.
 //  3. Replay the WAL onto them in LSN order.
 //  4. Open the WAL for new appends.
-func New(cfg EngineConfig) (*Engine, error) {
+func New(cfg Config) (*Engine, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return nil, fmt.Errorf("engine: create data dir: %w", err)
 	}
-	if err := os.MkdirAll(segmentsDir(cfg.DataDir), 0o755); err != nil {
+	if err := os.MkdirAll(segmentsDir(cfg.DataDir), 0o750); err != nil {
 		return nil, fmt.Errorf("engine: create segments dir: %w", err)
 	}
 
@@ -150,7 +150,7 @@ func (e *Engine) Close() error {
 }
 
 // CreateCollection registers a new collection.
-func (e *Engine) CreateCollection(ctx context.Context, cfg CollectionConfig) error {
+func (e *Engine) CreateCollection(_ context.Context, cfg CollectionConfig) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func (e *Engine) CreateCollection(ctx context.Context, cfg CollectionConfig) err
 
 // DropCollection removes a collection and its in-memory state. Sealed segment
 // files are not deleted by this MVP — they remain on disk for forensic access.
-func (e *Engine) DropCollection(ctx context.Context, name string) error {
+func (e *Engine) DropCollection(_ context.Context, name string) error {
 	e.mu.Lock()
 	state, ok := e.collections[name]
 	if !ok {
@@ -246,7 +246,7 @@ func (e *Engine) ExportCollection(name string) (CollectionConfig, []index.Vector
 
 // Insert appends a vector to the named collection. The operation is durably
 // logged before applying to the in-memory index.
-func (e *Engine) Insert(ctx context.Context, collection string, entry index.VectorEntry) error {
+func (e *Engine) Insert(_ context.Context, collection string, entry index.VectorEntry) error {
 	if err := validateVector(entry, 0); err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func (e *Engine) Insert(ctx context.Context, collection string, entry index.Vect
 }
 
 // Delete tombstones a vector from the named collection.
-func (e *Engine) Delete(ctx context.Context, collection, id string) error {
+func (e *Engine) Delete(_ context.Context, collection, id string) error {
 	if id == "" {
 		return fmt.Errorf("engine: delete: id must not be empty")
 	}
@@ -348,7 +348,7 @@ func (e *Engine) Search(ctx context.Context, collection string, query []float32,
 }
 
 // Flush forces sealing of the active growing segment in the named collection.
-func (e *Engine) Flush(ctx context.Context, collection string) error {
+func (e *Engine) Flush(_ context.Context, collection string) error {
 	e.mu.RLock()
 	state, ok := e.collections[collection]
 	e.mu.RUnlock()

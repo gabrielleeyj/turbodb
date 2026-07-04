@@ -69,7 +69,7 @@ func TestTombstoneLogClear(t *testing.T) {
 	}
 }
 
-func TestTombstoneLogConcurrent(t *testing.T) {
+func TestTombstoneLogConcurrent(_ *testing.T) {
 	tl := NewTombstoneLog()
 	var wg sync.WaitGroup
 

@@ -52,7 +52,7 @@ func (s *GRPCServer) DropCollection(ctx context.Context, req *apiv1.DropCollecti
 }
 
 // ListCollections returns all collection configs.
-func (s *GRPCServer) ListCollections(ctx context.Context, req *apiv1.ListCollectionsRequest) (*apiv1.ListCollectionsResponse, error) {
+func (s *GRPCServer) ListCollections(_ context.Context, _ *apiv1.ListCollectionsRequest) (*apiv1.ListCollectionsResponse, error) {
 	configs := s.engine.ListCollections()
 	out := make([]*apiv1.CollectionConfig, 0, len(configs))
 	for _, c := range configs {
@@ -62,7 +62,7 @@ func (s *GRPCServer) ListCollections(ctx context.Context, req *apiv1.ListCollect
 }
 
 // DescribeCollection returns config + stats for a collection.
-func (s *GRPCServer) DescribeCollection(ctx context.Context, req *apiv1.DescribeCollectionRequest) (*apiv1.DescribeCollectionResponse, error) {
+func (s *GRPCServer) DescribeCollection(_ context.Context, req *apiv1.DescribeCollectionRequest) (*apiv1.DescribeCollectionResponse, error) {
 	cfg, stats, err := s.engine.DescribeCollection(req.GetName())
 	if err != nil {
 		return nil, mapError(err)
@@ -189,7 +189,7 @@ func (s *GRPCServer) Flush(ctx context.Context, req *apiv1.FlushRequest) (*apiv1
 }
 
 // GetStats returns runtime stats for a collection.
-func (s *GRPCServer) GetStats(ctx context.Context, req *apiv1.GetStatsRequest) (*apiv1.GetStatsResponse, error) {
+func (s *GRPCServer) GetStats(_ context.Context, req *apiv1.GetStatsRequest) (*apiv1.GetStatsResponse, error) {
 	stats, err := s.engine.Stats(req.GetCollection())
 	if err != nil {
 		return nil, mapError(err)
@@ -228,8 +228,8 @@ func protoToCollectionConfig(p *apiv1.CollectionConfig) (CollectionConfig, error
 func collectionConfigToProto(c CollectionConfig) *apiv1.CollectionConfig {
 	pc := &apiv1.CollectionConfig{
 		Name:        c.Name,
-		Dimension:   int32(c.Dim),
-		BitWidth:    int32(c.BitWidth),
+		Dimension:   int32(c.Dim),      // #nosec G115 -- dim validated <= 4096
+		BitWidth:    int32(c.BitWidth), // #nosec G115 -- bit width validated <= 8
 		RotatorSeed: c.RotatorSeed,
 	}
 	switch c.Metric {
@@ -246,8 +246,8 @@ func collectionConfigToProto(c CollectionConfig) *apiv1.CollectionConfig {
 func collectionStatsToProto(s index.CollectionStats) *apiv1.CollectionStats {
 	return &apiv1.CollectionStats{
 		VectorCount:         int64(s.VectorCount),
-		SealedSegmentCount:  int32(s.SealedSegmentCount),
-		GrowingSegmentCount: int32(s.GrowingSegmentCount),
+		SealedSegmentCount:  int32(s.SealedSegmentCount),  // #nosec G115 -- segment counts are far below int32 max
+		GrowingSegmentCount: int32(s.GrowingSegmentCount), // #nosec G115 -- segment counts are far below int32 max
 		HostMemoryBytes:     s.PinnedBytes,
 	}
 }

@@ -15,17 +15,11 @@ import (
 )
 
 // writeSafeTensorsMatrix writes an [N, dim] F32 tensor to path.
-func writeSafeTensorsMatrix(t *testing.T, path string, rows, dim int) [][]float32 {
+func writeSafeTensorsMatrix(t *testing.T, path string, rows, dim int) {
 	t.Helper()
-	vecs := make([][]float32, rows)
 	buf := make([]byte, rows*dim*4)
-	for i := 0; i < rows; i++ {
-		vecs[i] = make([]float32, dim)
-		for j := 0; j < dim; j++ {
-			v := float32((i*dim + j) % 7)
-			vecs[i][j] = v
-			binary.LittleEndian.PutUint32(buf[(i*dim+j)*4:], math.Float32bits(v))
-		}
+	for i := 0; i < rows*dim; i++ {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(float32(i%7)))
 	}
 	var out bytes.Buffer
 	tensor := &safetensors.Tensor{
@@ -39,7 +33,6 @@ func writeSafeTensorsMatrix(t *testing.T, path string, rows, dim int) [][]float3
 	if err := os.WriteFile(path, out.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return vecs
 }
 
 func TestReadMatrixSafeTensors(t *testing.T) {
@@ -70,11 +63,11 @@ func TestImportExportRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	eng, err := engine.New(engine.EngineConfig{DataDir: filepath.Join(dir, "data")})
+	eng, err := engine.New(engine.Config{DataDir: filepath.Join(dir, "data")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	ctx := context.Background()
 	n, err := ImportMatrix(ctx, eng, m, ImportOptions{Collection: "docs", BitWidth: 4})
@@ -150,10 +143,10 @@ func TestConvertAndInspect(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := ConvertSafeTensorsToGGUF(stPath, out); err != nil {
-		out.Close()
+		_ = out.Close()
 		t.Fatalf("convert: %v", err)
 	}
-	out.Close()
+	_ = out.Close()
 
 	gtensors, _, err := Inspect(FormatGGUF, ggufPath)
 	if err != nil {
@@ -205,11 +198,11 @@ func TestExportEmptyErrors(t *testing.T) {
 }
 
 func TestImportValidation(t *testing.T) {
-	eng, err := engine.New(engine.EngineConfig{DataDir: t.TempDir()})
+	eng, err := engine.New(engine.Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 	ctx := context.Background()
 	if _, err := ImportMatrix(ctx, eng, Matrix{}, ImportOptions{Collection: "x"}); err == nil {
 		t.Error("expected empty-matrix error")

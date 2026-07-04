@@ -62,9 +62,9 @@ type Record struct {
 // 4 + bodyLen + 4.
 
 const (
-	frameHeaderSize = 4 // bodyLen prefix
-	frameTrailerSize = 4 // crc32c suffix
-	bodyMinSize     = 8 + 1 // LSN + type
+	frameHeaderSize  = 4     // bodyLen prefix
+	frameTrailerSize = 4     // crc32c suffix
+	bodyMinSize      = 8 + 1 // LSN + type
 )
 
 // crcTable is the Castagnoli polynomial used throughout the project.
@@ -80,9 +80,16 @@ func EncodedSize(payloadLen int) int {
 	return frameHeaderSize + bodyMinSize + payloadLen + frameTrailerSize
 }
 
+// maxRecordPayload caps a single WAL record payload so the uint32 frame
+// length field can never wrap.
+const maxRecordPayload = 1 << 30
+
 // writeRecord serializes a record to w. Returns the number of bytes written.
 func writeRecord(w io.Writer, rec Record) (int, error) {
-	bodyLen := uint32(bodyMinSize + len(rec.Payload))
+	if len(rec.Payload) > maxRecordPayload {
+		return 0, fmt.Errorf("wal: payload %d bytes exceeds max %d", len(rec.Payload), maxRecordPayload)
+	}
+	bodyLen := uint32(bodyMinSize + len(rec.Payload)) // #nosec G115 -- bounded by maxRecordPayload above
 
 	buf := make([]byte, frameHeaderSize+int(bodyLen)+frameTrailerSize)
 	binary.LittleEndian.PutUint32(buf[0:4], bodyLen)
@@ -105,38 +112,37 @@ func writeRecord(w io.Writer, rec Record) (int, error) {
 // readRecord deserializes a single record from r. Returns io.EOF if r is at end
 // of stream. Returns ErrCorruptRecord (wrapped) if the frame is malformed or
 // the CRC does not match.
-func readRecord(r io.Reader) (Record, int, error) {
+func readRecord(r io.Reader) (Record, error) {
 	var hdr [frameHeaderSize]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
 		if errors.Is(err, io.EOF) {
-			return Record{}, 0, io.EOF
+			return Record{}, io.EOF
 		}
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return Record{}, 0, fmt.Errorf("%w: short header", ErrCorruptRecord)
+			return Record{}, fmt.Errorf("%w: short header", ErrCorruptRecord)
 		}
-		return Record{}, 0, fmt.Errorf("wal: read frame header: %w", err)
+		return Record{}, fmt.Errorf("wal: read frame header: %w", err)
 	}
 
 	bodyLen := binary.LittleEndian.Uint32(hdr[:])
 	if bodyLen < bodyMinSize {
-		return Record{}, frameHeaderSize, fmt.Errorf("%w: body length %d too small", ErrCorruptRecord, bodyLen)
+		return Record{}, fmt.Errorf("%w: body length %d too small", ErrCorruptRecord, bodyLen)
 	}
 
 	body := make([]byte, bodyLen)
 	if _, err := io.ReadFull(r, body); err != nil {
-		return Record{}, frameHeaderSize, fmt.Errorf("%w: short body: %w", ErrCorruptRecord, err)
+		return Record{}, fmt.Errorf("%w: short body: %w", ErrCorruptRecord, err)
 	}
 
 	var trailer [frameTrailerSize]byte
 	if _, err := io.ReadFull(r, trailer[:]); err != nil {
-		return Record{}, frameHeaderSize + int(bodyLen), fmt.Errorf("%w: short trailer: %w", ErrCorruptRecord, err)
+		return Record{}, fmt.Errorf("%w: short trailer: %w", ErrCorruptRecord, err)
 	}
 
 	storedCRC := binary.LittleEndian.Uint32(trailer[:])
 	computedCRC := crc32.Checksum(body, crcTable)
 	if storedCRC != computedCRC {
-		return Record{}, frameHeaderSize + int(bodyLen) + frameTrailerSize,
-			fmt.Errorf("%w: crc mismatch (stored=%x computed=%x)", ErrCorruptRecord, storedCRC, computedCRC)
+		return Record{}, fmt.Errorf("%w: crc mismatch (stored=%x computed=%x)", ErrCorruptRecord, storedCRC, computedCRC)
 	}
 
 	rec := Record{
@@ -148,5 +154,5 @@ func readRecord(r io.Reader) (Record, int, error) {
 		copy(rec.Payload, body[bodyMinSize:])
 	}
 
-	return rec, frameHeaderSize + int(bodyLen) + frameTrailerSize, nil
+	return rec, nil
 }

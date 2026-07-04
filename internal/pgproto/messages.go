@@ -42,6 +42,7 @@ type VectorMsg struct {
 	Values []float32
 }
 
+// Encode serializes the message body (without frame/version headers).
 func (m VectorMsg) Encode() []byte {
 	w := writer{}
 	w.u64(m.TID)
@@ -61,6 +62,7 @@ type DeleteMsg struct {
 	TID uint64
 }
 
+// Encode serializes the message body (without frame/version headers).
 func (m DeleteMsg) Encode() []byte {
 	w := writer{}
 	w.u64(m.TID)
@@ -84,6 +86,7 @@ type SearchBegin struct {
 	Exact            bool
 }
 
+// Encode serializes the message body (without frame/version headers).
 func (m SearchBegin) Encode() []byte {
 	w := writer{}
 	w.str(m.Collection)
@@ -117,6 +120,7 @@ type ResultMsg struct {
 	Done  bool
 }
 
+// Encode serializes the message body (without frame/version headers).
 func (m ResultMsg) Encode() []byte {
 	w := writer{}
 	w.u64(m.TID)
@@ -140,6 +144,7 @@ type StatsReply struct {
 	PinnedBytes    uint64
 }
 
+// Encode serializes the message body (without frame/version headers).
 func (m StatsReply) Encode() []byte {
 	w := writer{}
 	w.u64(m.VectorCount)

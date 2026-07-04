@@ -5,7 +5,7 @@ package cuda
 import "fmt"
 
 // NewContext returns an error when built without the cuda tag.
-func NewContext(deviceID int) (Context, error) {
+func NewContext(_ int) (Context, error) {
 	return nil, ErrNoCUDA
 }
 
@@ -17,22 +17,22 @@ func Available() bool {
 // stubCodebook is a placeholder that satisfies the Codebook interface.
 type stubCodebook struct{}
 
-func (stubCodebook) Close()      {}
+func (stubCodebook) Close()        {}
 func (stubCodebook) BitWidth() int { return 0 }
-func (stubCodebook) Size() int   { return 0 }
+func (stubCodebook) Size() int     { return 0 }
 
 // stubRotator is a placeholder that satisfies the Rotator interface.
 type stubRotator struct{}
 
-func (stubRotator) Close()     {}
-func (stubRotator) Dim() int   { return 0 }
+func (stubRotator) Close()      {}
+func (stubRotator) Dim() int    { return 0 }
 func (stubRotator) OutDim() int { return 0 }
 
 // stubContext returns ErrNoCUDA for all operations.
 type stubContext struct{}
 
-func (stubContext) Close()           {}
-func (stubContext) Sync() error      { return ErrNoCUDA }
+func (stubContext) Close()            {}
+func (stubContext) Sync() error       { return ErrNoCUDA }
 func (stubContext) LastError() string { return ErrNoCUDA.Error() }
 
 func (stubContext) DeviceInfo() (DeviceInfo, error) {

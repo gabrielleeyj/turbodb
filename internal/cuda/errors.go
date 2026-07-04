@@ -8,25 +8,26 @@ import "errors"
 
 // Status codes matching tq_status_t in turboquant.h.
 const (
-	StatusOK         = 0
-	StatusCUDA       = 1
-	StatusOOM        = 2
-	StatusInvalidArg = 3
-	StatusDimNotPow2 = 4
+	StatusOK          = 0
+	StatusCUDA        = 1
+	StatusOOM         = 2
+	StatusInvalidArg  = 3
+	StatusDimNotPow2  = 4
 	StatusUnsupported = 5
-	StatusNotInit    = 6
-	StatusInternal   = 7
+	StatusNotInit     = 6
+	StatusInternal    = 7
 )
 
+// Sentinel errors mapped from tq_status_t codes returned by the CUDA layer.
 var (
-	ErrCUDA       = errors.New("cuda: CUDA runtime error")
-	ErrOOM        = errors.New("cuda: out of memory")
-	ErrInvalidArg = errors.New("cuda: invalid argument")
-	ErrDimNotPow2 = errors.New("cuda: dimension must be power of 2")
+	ErrCUDA        = errors.New("cuda: CUDA runtime error")
+	ErrOOM         = errors.New("cuda: out of memory")
+	ErrInvalidArg  = errors.New("cuda: invalid argument")
+	ErrDimNotPow2  = errors.New("cuda: dimension must be power of 2")
 	ErrUnsupported = errors.New("cuda: unsupported configuration")
-	ErrNotInit    = errors.New("cuda: context not initialized")
-	ErrInternal   = errors.New("cuda: internal error")
-	ErrNoCUDA     = errors.New("cuda: not compiled with CUDA support (use -tags cuda)")
+	ErrNotInit     = errors.New("cuda: context not initialized")
+	ErrInternal    = errors.New("cuda: internal error")
+	ErrNoCUDA      = errors.New("cuda: not compiled with CUDA support (use -tags cuda)")
 )
 
 // statusToError converts a C tq_status_t to a Go error.

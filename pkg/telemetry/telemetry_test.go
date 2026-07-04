@@ -11,16 +11,16 @@ import (
 )
 
 type fakeStats struct {
-	active   int
-	sealed   uint64
-	hostMem  int64
-	gpuMem   int64
+	active  int
+	sealed  uint64
+	hostMem int64
+	gpuMem  int64
 }
 
-func (f *fakeStats) SegmentsActive() int        { return f.active }
+func (f *fakeStats) SegmentsActive() int         { return f.active }
 func (f *fakeStats) SegmentsSealedTotal() uint64 { return f.sealed }
-func (f *fakeStats) HostMemoryBytes() int64     { return f.hostMem }
-func (f *fakeStats) GPUMemoryBytes() int64      { return f.gpuMem }
+func (f *fakeStats) HostMemoryBytes() int64      { return f.hostMem }
+func (f *fakeStats) GPUMemoryBytes() int64       { return f.gpuMem }
 
 func TestNewRequiresSource(t *testing.T) {
 	t.Parallel()

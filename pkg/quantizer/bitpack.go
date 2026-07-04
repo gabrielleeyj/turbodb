@@ -31,7 +31,7 @@ func PackBits(indices []int, bitWidth int) ([]byte, error) {
 			}
 			// Extract the lowest bitsToWrite bits from val.
 			chunk := val & ((1 << bitsToWrite) - 1)
-			buf[byteIdx] |= byte(chunk << bitOff)
+			buf[byteIdx] |= byte(chunk << bitOff) // #nosec G115 -- deliberate bit packing
 			val >>= bitsToWrite
 			bitPos += bitsToWrite
 			remaining -= bitsToWrite

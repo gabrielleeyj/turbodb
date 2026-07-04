@@ -76,7 +76,7 @@ func TestOpenAndMetadataTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if f.Alignment() != DefaultAlignment {
 		t.Errorf("alignment = %d", f.Alignment())
@@ -117,12 +117,12 @@ func TestValueAccessorErrors(t *testing.T) {
 }
 
 func TestUnsupportedDequant(t *testing.T) {
-	if _, err := dequantize(GGMLTypeQ6_K, make([]byte, 64), 32); err == nil {
+	if _, err := dequantize(GGMLTypeQ6K, make([]byte, 64), 32); err == nil {
 		t.Error("expected unimplemented dequant error")
 	}
 }
 
-func TestHalfFloatSpecialValues(t *testing.T) {
+func TestHalfFloatSpecialValues(_ *testing.T) {
 	for _, h := range []uint16{0x0000, 0x8000, 0x7c00, 0xfc00, 0x0001, 0x03ff, 0x7e00} {
 		_ = f16ToF32(h)
 	}
@@ -192,7 +192,7 @@ func TestMiscHelpers(t *testing.T) {
 	if keys := SortedMetadataKeys([]string{"b", "a"}); keys[0] != "a" {
 		t.Errorf("SortedMetadataKeys not sorted: %v", keys)
 	}
-	for _, ty := range []GGMLType{GGMLTypeF32, GGMLTypeQ4_K, GGMLTypeTurboQuantProd, GGMLType(999)} {
+	for _, ty := range []GGMLType{GGMLTypeF32, GGMLTypeQ4K, GGMLTypeTurboQuantProd, GGMLType(999)} {
 		if ty.String() == "" {
 			t.Errorf("String() empty for %d", ty)
 		}

@@ -23,6 +23,7 @@ import (
 // Opcode identifies a message kind.
 type Opcode uint16
 
+// Wire opcodes for the pg_turboquant IPC protocol.
 const (
 	OpBuildBegin  Opcode = 1
 	OpBuildVector Opcode = 2

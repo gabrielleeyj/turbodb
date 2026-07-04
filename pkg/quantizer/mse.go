@@ -189,4 +189,3 @@ func containsNaNOrInf(x []float32) bool {
 	}
 	return false
 }
-

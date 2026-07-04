@@ -59,7 +59,7 @@ func float32ToHalf(f float32) uint16 {
 		}
 		mant |= 0x800000
 		shift := uint32(14 - exp)
-		half := uint16(mant >> shift)
+		half := uint16(mant >> shift) // #nosec G115 -- deliberate float16 bit narrowing
 		if mant&((1<<shift)-1) > (1 << (shift - 1)) {
 			half++
 		}
@@ -119,7 +119,7 @@ func dequantQ8_0(raw []byte, n int) ([]float32, error) {
 		}
 		d := f16ToF32(binary.LittleEndian.Uint16(raw[base:]))
 		for j := 0; j < qkBlock; j++ {
-			out[b*qkBlock+j] = d * float32(int8(raw[base+2+j]))
+			out[b*qkBlock+j] = d * float32(int8(raw[base+2+j])) // #nosec G115 -- Q8_0 stores signed bytes; reinterpretation is the format
 		}
 	}
 	return out, nil

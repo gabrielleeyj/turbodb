@@ -29,6 +29,7 @@ const AlignmentKey = "general.alignment"
 // GGMLType identifies the on-disk encoding of a tensor's elements.
 type GGMLType uint32
 
+// Upstream ggml type identifiers (subset) plus TurboQuant extensions.
 const (
 	GGMLTypeF32  GGMLType = 0
 	GGMLTypeF16  GGMLType = 1
@@ -38,11 +39,12 @@ const (
 	GGMLTypeQ5_1 GGMLType = 7
 	GGMLTypeQ8_0 GGMLType = 8
 	GGMLTypeQ8_1 GGMLType = 9
-	GGMLTypeQ4_K GGMLType = 12
-	GGMLTypeQ6_K GGMLType = 14
+	GGMLTypeQ4K  GGMLType = 12
+	GGMLTypeQ6K  GGMLType = 14
 
-	// TurboQuant custom types, allocated in a high namespace so they never
-	// clash with future upstream ggml types.
+	// GGMLTypeTurboQuantMSE and GGMLTypeTurboQuantProd are TurboQuant custom
+	// types, allocated in a high namespace so they never clash with future
+	// upstream ggml types.
 	GGMLTypeTurboQuantMSE  GGMLType = 128
 	GGMLTypeTurboQuantProd GGMLType = 129
 )
@@ -83,9 +85,9 @@ func (t GGMLType) String() string {
 		return "Q8_0"
 	case GGMLTypeQ8_1:
 		return "Q8_1"
-	case GGMLTypeQ4_K:
+	case GGMLTypeQ4K:
 		return "Q4_K"
-	case GGMLTypeQ6_K:
+	case GGMLTypeQ6K:
 		return "Q6_K"
 	case GGMLTypeTurboQuantMSE:
 		return "TURBOQUANT_MSE"

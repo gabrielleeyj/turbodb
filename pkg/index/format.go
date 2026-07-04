@@ -65,11 +65,11 @@ type SegmentHeader struct {
 
 // WriteSegmentFile writes a sealed segment to a file.
 func WriteSegmentFile(path string, seg *SealedSegment) error {
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path derived from engine data dir
 	if err != nil {
 		return fmt.Errorf("write segment file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	crc := crc32.New(crc32.MakeTable(crc32.Castagnoli))
 	w := io.MultiWriter(f, crc)
@@ -77,12 +77,12 @@ func WriteSegmentFile(path string, seg *SealedSegment) error {
 	// Write header.
 	hdr := SegmentHeader{
 		Version:     formatVersion,
-		Dim:         uint32(seg.dim),
-		BitWidth:    uint32(seg.bitWidth),
+		Dim:         uint32(seg.dim),      // #nosec G115 -- dim validated at collection creation
+		BitWidth:    uint32(seg.bitWidth), // #nosec G115 -- bit width validated <= 8
 		RotSeed:     seg.rotator.Seed(),
-		CodebookDim: uint32(seg.cb.Dim()),
-		CodebookBW:  uint32(seg.cb.BitWidth()),
-		Count:       uint64(seg.count),
+		CodebookDim: uint32(seg.cb.Dim()),      // #nosec G115 -- dim validated at collection creation
+		CodebookBW:  uint32(seg.cb.BitWidth()), // #nosec G115 -- bit width validated <= 8
+		Count:       uint64(seg.count),         // #nosec G115 -- count is non-negative
 		CreatedAt:   seg.createdAt.UnixNano(),
 		SealedAt:    seg.sealedAt.UnixNano(),
 	}
@@ -106,7 +106,7 @@ func WriteSegmentFile(path string, seg *SealedSegment) error {
 
 	// Write codes: for each vector, write the packed indices bytes.
 	for i := range seg.codes {
-		codeLen := uint32(len(seg.codes[i].Indices))
+		codeLen := uint32(len(seg.codes[i].Indices)) // #nosec G115 -- packed code length is bounded by dim
 		if err := binary.Write(w, binary.LittleEndian, codeLen); err != nil {
 			return fmt.Errorf("write code length %d: %w", i, err)
 		}
@@ -130,7 +130,7 @@ func WriteSegmentFile(path string, seg *SealedSegment) error {
 // ReadSegmentFile reads a sealed segment from a file. The caller provides the
 // rotation and codebook which are identified by seed/dim/bw from the header.
 func ReadSegmentFile(path string, segID string, rot rotation.Rotator, cb *codebook.Codebook) (*SealedSegment, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path derived from engine data dir
 	if err != nil {
 		return nil, fmt.Errorf("read segment file: %w", err)
 	}
@@ -171,8 +171,8 @@ func ReadSegmentFile(path string, segID string, rot rotation.Rotator, cb *codebo
 	hdr.CodebookDim = binary.LittleEndian.Uint32(hdrBytes[24:28])
 	hdr.CodebookBW = binary.LittleEndian.Uint32(hdrBytes[28:32])
 	hdr.Count = binary.LittleEndian.Uint64(hdrBytes[32:40])
-	hdr.CreatedAt = int64(binary.LittleEndian.Uint64(hdrBytes[40:48]))
-	hdr.SealedAt = int64(binary.LittleEndian.Uint64(hdrBytes[48:56]))
+	hdr.CreatedAt = int64(binary.LittleEndian.Uint64(hdrBytes[40:48])) // #nosec G115 -- CRC-verified engine-written timestamp
+	hdr.SealedAt = int64(binary.LittleEndian.Uint64(hdrBytes[48:56]))  // #nosec G115 -- CRC-verified engine-written timestamp
 
 	// Validate header against provided rotator/codebook.
 	if rot.Seed() != hdr.RotSeed {
@@ -180,7 +180,7 @@ func ReadSegmentFile(path string, segID string, rot rotation.Rotator, cb *codebo
 			hdr.RotSeed, rot.Seed())
 	}
 
-	count := int(hdr.Count)
+	count := int(hdr.Count) // #nosec G115 -- CRC-verified count; body parsing bounds-checks every read
 	dim := int(hdr.Dim)
 	bitWidth := int(hdr.BitWidth)
 
@@ -241,7 +241,7 @@ func ReadSegmentFile(path string, segID string, rot rotation.Rotator, cb *codebo
 
 // writeString writes a length-prefixed string.
 func writeString(w io.Writer, s string) error {
-	length := uint32(len(s))
+	length := uint32(len(s)) // #nosec G115 -- segment ids are short strings
 	if err := binary.Write(w, binary.LittleEndian, length); err != nil {
 		return err
 	}

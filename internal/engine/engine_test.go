@@ -28,7 +28,7 @@ const (
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	dir := t.TempDir()
-	e, err := New(EngineConfig{DataDir: dir})
+	e, err := New(Config{DataDir: dir})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -47,8 +47,8 @@ func defaultCollection(name string) CollectionConfig {
 	}
 }
 
-func randVec(rng *rand.Rand, dim int) []float32 {
-	v := make([]float32, dim)
+func randVec(rng *rand.Rand) []float32 {
+	v := make([]float32, testDim)
 	for i := range v {
 		v[i] = rng.Float32()*2 - 1
 	}
@@ -104,7 +104,7 @@ func TestInsertSearchDelete(t *testing.T) {
 	for i := range 100 {
 		err := e.Insert(ctx, "c", index.VectorEntry{
 			ID:     idOf(i),
-			Values: randVec(rng, testDim),
+			Values: randVec(rng),
 		})
 		if err != nil {
 			t.Fatalf("Insert %d: %v", i, err)
@@ -113,7 +113,7 @@ func TestInsertSearchDelete(t *testing.T) {
 
 	// Search using the first inserted vector — it should appear at top.
 	rng2 := rand.New(rand.NewPCG(7, 11))
-	query := randVec(rng2, testDim)
+	query := randVec(rng2)
 	results, plan, err := e.Search(ctx, "c", query, search.Options{TopK: 5})
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestRecoveryReplaysWAL(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	e1, err := New(EngineConfig{DataDir: dir})
+	e1, err := New(Config{DataDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestRecoveryReplaysWAL(t *testing.T) {
 	}
 	rng := rand.New(rand.NewPCG(1, 2))
 	for i := range 25 {
-		if err := e1.Insert(ctx, "c", index.VectorEntry{ID: idOf(i), Values: randVec(rng, testDim)}); err != nil {
+		if err := e1.Insert(ctx, "c", index.VectorEntry{ID: idOf(i), Values: randVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -169,11 +169,11 @@ func TestRecoveryReplaysWAL(t *testing.T) {
 	}
 
 	// Reopen — recovery should replay everything.
-	e2, err := New(EngineConfig{DataDir: dir})
+	e2, err := New(Config{DataDir: dir})
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer e2.Close()
+	defer func() { _ = e2.Close() }()
 
 	stats, err := e2.Stats("c")
 	if err != nil {
@@ -197,7 +197,7 @@ func TestSearchPlannerOptions(t *testing.T) {
 	}
 	rng := rand.New(rand.NewPCG(3, 5))
 	for i := range 60 {
-		if err := e.Insert(ctx, "p", index.VectorEntry{ID: idOf(i), Values: randVec(rng, testDim)}); err != nil {
+		if err := e.Insert(ctx, "p", index.VectorEntry{ID: idOf(i), Values: randVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -209,7 +209,7 @@ func TestSearchPlannerOptions(t *testing.T) {
 
 	// Oversearch widens the per-segment candidate pool.
 	rng2 := rand.New(rand.NewPCG(3, 5))
-	q := randVec(rng2, testDim)
+	q := randVec(rng2)
 	_, plan, err := e.Search(ctx, "p", q, search.Options{TopK: 5, OversearchFactor: 3.0})
 	if err != nil {
 		t.Fatal(err)
@@ -236,7 +236,7 @@ func TestEngineMemoryBudget(t *testing.T) {
 	dir := t.TempDir()
 	// Tiny seal threshold so we can drive a seal cheaply in tests, plus a
 	// generous budget that nonetheless tracks usage.
-	e, err := New(EngineConfig{
+	e, err := New(Config{
 		DataDir:           dir,
 		SealThreshold:     8,
 		MemoryBudgetBytes: 1 << 20, // 1 MiB
@@ -244,7 +244,7 @@ func TestEngineMemoryBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer e.Close()
+	defer func() { _ = e.Close() }()
 	ctx := context.Background()
 
 	if err := e.CreateCollection(ctx, defaultCollection("budget")); err != nil {
@@ -258,7 +258,7 @@ func TestEngineMemoryBudget(t *testing.T) {
 
 	rng := rand.New(rand.NewPCG(42, 43))
 	for i := range 8 {
-		if err := e.Insert(ctx, "budget", index.VectorEntry{ID: idOf(i), Values: randVec(rng, testDim)}); err != nil {
+		if err := e.Insert(ctx, "budget", index.VectorEntry{ID: idOf(i), Values: randVec(rng)}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -333,11 +333,11 @@ func TestValidation(t *testing.T) {
 func TestGRPCRoundTrip(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	eng, err := New(EngineConfig{DataDir: filepath.Join(dir, "data")})
+	eng, err := New(Config{DataDir: filepath.Join(dir, "data")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -353,7 +353,7 @@ func TestGRPCRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := apiv1.NewTurboDBEngineClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -397,7 +397,7 @@ func TestGRPCRoundTrip(t *testing.T) {
 	const n = 30
 	vecs := make([]*apiv1.Vector, n)
 	for i := range n {
-		vecs[i] = &apiv1.Vector{Id: idOf(i), Values: randVec(rng, testDim)}
+		vecs[i] = &apiv1.Vector{Id: idOf(i), Values: randVec(rng)}
 	}
 	if err := batch.Send(&apiv1.InsertBatchRequest{Collection: "grpc-test", Vectors: vecs}); err != nil {
 		t.Fatal(err)
@@ -412,7 +412,7 @@ func TestGRPCRoundTrip(t *testing.T) {
 
 	// Search — top result should match the first vector when we re-derive it.
 	rng2 := rand.New(rand.NewPCG(99, 100))
-	query := randVec(rng2, testDim)
+	query := randVec(rng2)
 	searchResp, err := client.Search(ctx, &apiv1.SearchRequest{
 		Collection: "grpc-test",
 		Query:      query,

@@ -32,7 +32,7 @@ func TestRecordRoundTrip(t *testing.T) {
 				t.Fatalf("size mismatch: got %d, want %d", n, EncodedSize(len(tc.rec.Payload)))
 			}
 
-			got, _, err := readRecord(&buf)
+			got, err := readRecord(&buf)
 			if err != nil {
 				t.Fatalf("readRecord: %v", err)
 			}
@@ -61,7 +61,7 @@ func TestRecordCorruption(t *testing.T) {
 		// Flip a payload byte.
 		raw := buf.Bytes()
 		raw[len(raw)-5] ^= 0xFF
-		_, _, err = readRecord(bytes.NewReader(raw))
+		_, err = readRecord(bytes.NewReader(raw))
 		if !errors.Is(err, ErrCorruptRecord) {
 			t.Fatalf("expected ErrCorruptRecord, got %v", err)
 		}
@@ -74,14 +74,14 @@ func TestRecordCorruption(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw := buf.Bytes()[:8] // only header + a few bytes
-		_, _, err = readRecord(bytes.NewReader(raw))
+		_, err = readRecord(bytes.NewReader(raw))
 		if !errors.Is(err, ErrCorruptRecord) {
 			t.Fatalf("expected ErrCorruptRecord, got %v", err)
 		}
 	})
 
 	t.Run("eof at boundary", func(t *testing.T) {
-		_, _, err := readRecord(bytes.NewReader(nil))
+		_, err := readRecord(bytes.NewReader(nil))
 		if !errors.Is(err, io.EOF) {
 			t.Fatalf("expected io.EOF, got %v", err)
 		}

@@ -106,9 +106,9 @@ func (a *Adapter) Stats(_ context.Context, collection string) (pgproto.StatsRepl
 		return pgproto.StatsReply{}, fmt.Errorf("pgipc: stats: %w", err)
 	}
 	return pgproto.StatsReply{
-		VectorCount:    uint64(stats.VectorCount),
-		SealedSegments: uint32(stats.SealedSegmentCount),
-		GrowingSegment: uint32(stats.GrowingSegmentCount),
-		PinnedBytes:    uint64(stats.PinnedBytes),
+		VectorCount:    uint64(stats.VectorCount),         // #nosec G115 -- counts are non-negative
+		SealedSegments: uint32(stats.SealedSegmentCount),  // #nosec G115 -- segment counts are far below uint32 max
+		GrowingSegment: uint32(stats.GrowingSegmentCount), // #nosec G115 -- segment counts are far below uint32 max
+		PinnedBytes:    uint64(stats.PinnedBytes),         // #nosec G115 -- counts are non-negative
 	}, nil
 }

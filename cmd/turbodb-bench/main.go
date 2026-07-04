@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gabrielleeyj/turbodb/internal/engine"
@@ -145,7 +144,7 @@ func run(cfg config) error {
 
 func resolveDataDir(cfg config) (string, func(), error) {
 	if cfg.dataDir != "" {
-		if err := os.MkdirAll(cfg.dataDir, 0o755); err != nil {
+		if err := os.MkdirAll(cfg.dataDir, 0o750); err != nil {
 			return "", nil, fmt.Errorf("create data dir: %w", err)
 		}
 		return cfg.dataDir, func() {}, nil
@@ -165,7 +164,7 @@ func resolveDataDir(cfg config) (string, func(), error) {
 }
 
 func loadEngine(dataDir string, logger *slog.Logger, collection string, cfg config, vectors [][]float32) (time.Duration, error) {
-	eng, err := engine.New(engine.EngineConfig{
+	eng, err := engine.New(engine.Config{
 		DataDir:       dataDir,
 		Logger:        logger,
 		SealThreshold: cfg.sealThreshold,
@@ -173,7 +172,7 @@ func loadEngine(dataDir string, logger *slog.Logger, collection string, cfg conf
 	if err != nil {
 		return 0, err
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	ctx := context.Background()
 	if err := eng.CreateCollection(ctx, engine.CollectionConfig{
@@ -207,7 +206,7 @@ func loadEngine(dataDir string, logger *slog.Logger, collection string, cfg conf
 }
 
 func runSearchPass(dataDir string, logger *slog.Logger, collection string, cfg config, queries [][]float32, gt [][]int, label string) (Report, error) {
-	eng, err := engine.New(engine.EngineConfig{
+	eng, err := engine.New(engine.Config{
 		DataDir:       dataDir,
 		Logger:        logger,
 		SealThreshold: cfg.sealThreshold,
@@ -215,7 +214,7 @@ func runSearchPass(dataDir string, logger *slog.Logger, collection string, cfg c
 	if err != nil {
 		return Report{}, err
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	ctx := context.Background()
 	opts := search.Options{
@@ -240,20 +239,4 @@ func runSearchPass(dataDir string, logger *slog.Logger, collection string, cfg c
 	report := buildReport(label, results, gt, latencies, cfg.topK)
 	report.Print()
 	return report, nil
-}
-
-// dataDirIsEmpty is a small guard used by tests that want to assert no leftover
-// state. It walks the directory and returns true if no regular files remain.
-func dataDirIsEmpty(dir string) bool {
-	empty := true
-	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type().IsRegular() {
-			empty = false
-		}
-		return nil
-	})
-	return empty
 }

@@ -19,7 +19,7 @@ func generateUnitVectors(count, dim int, seed uint64) [][]float32 {
 	// Per-vector PCG seeded off (seed, i) so dataset and query streams stay
 	// reproducible regardless of insert ordering or worker count.
 	for i := 0; i < count; i++ {
-		r := rand.New(rand.NewPCG(seed, uint64(i)+1))
+		r := rand.New(rand.NewPCG(seed, uint64(i)+1)) // #nosec G404 -- reproducible synthetic benchmark data, not cryptographic
 		v := make([]float32, dim)
 		var sumSq float64
 		for j := 0; j < dim; j++ {

@@ -114,7 +114,7 @@ func Open(cfg Config) (*WAL, error) {
 		cfg.Logger = slog.Default()
 	}
 
-	if err := os.MkdirAll(cfg.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.Dir, 0o750); err != nil {
 		return nil, fmt.Errorf("wal: create dir %q: %w", cfg.Dir, err)
 	}
 
@@ -256,7 +256,7 @@ func (w *WAL) Close() error {
 		return nil
 	}
 	if err := w.flushAndSyncLocked(); err != nil {
-		w.curFile.Close()
+		_ = w.curFile.Close()
 		w.curFile = nil
 		return err
 	}
@@ -321,13 +321,13 @@ func (w *WAL) Dir() string { return w.dir }
 // openCurrentFile opens (or creates) the file at w.curIndex for append.
 func (w *WAL) openCurrentFile() error {
 	path := walFilePath(w.dir, w.curIndex)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600) // #nosec G304 -- path derived from configured WAL dir
 	if err != nil {
 		return fmt.Errorf("wal: open %s: %w", path, err)
 	}
 	info, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return fmt.Errorf("wal: stat %s: %w", path, err)
 	}
 	w.curFile = f
@@ -455,16 +455,16 @@ func walFilePath(dir string, index uint64) string {
 // well-formed record. Returns 0 if the file is empty or contains no readable
 // records. Trailing corruption is treated as a tail-truncation point.
 func scanLastLSN(path string) (uint64, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path derived from configured WAL dir
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	r := bufio.NewReader(f)
 	var lastLSN uint64
 	for {
-		rec, _, err := readRecord(r)
+		rec, err := readRecord(r)
 		if err != nil {
 			// EOF or trailing corruption — stop scanning.
 			return lastLSN, nil
