@@ -33,6 +33,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().String("engine", "localhost:7080", "engine gRPC address for remote commands")
 
 	root.AddCommand(
+		newAdminCmd(),
 		newCollectionCmd(),
 		newIndexCmd(),
 		newImportCmd(),

@@ -10,6 +10,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -36,6 +38,9 @@ func main() {
 	}
 }
 
+// version is stamped via -ldflags "-X main.version=..." at release build.
+var version = "dev"
+
 func run() error {
 	var (
 		listen        = flag.String("listen", ":7080", "gRPC listen address (host:port)")
@@ -47,6 +52,10 @@ func run() error {
 		pgAllowedUID  = flag.Int("pg-allowed-uid", -1, "restrict IPC peers to this UID via SO_PEERCRED (-1 = no check)")
 		walFsync      = flag.String("wal-fsync", "every", "WAL fsync policy: every (durable per insert) or group (batched fsync, higher throughput)")
 		walGroupInt   = flag.Duration("wal-group-interval", 0, "fsync cadence for --wal-fsync=group (default 10ms)")
+		adminListen   = flag.String("admin-listen", ":8080", "admin HTTP/JSON API listen address (empty disables)")
+		adminTLSCert  = flag.String("admin-tls-cert", "", "TLS certificate for the admin API (enables TLS with client-cert verification)")
+		adminTLSKey   = flag.String("admin-tls-key", "", "TLS key for the admin API")
+		adminTLSCA    = flag.String("admin-tls-ca", "", "CA bundle for verifying admin API client certificates (mTLS)")
 	)
 	flag.Parse()
 
@@ -92,6 +101,7 @@ func run() error {
 
 	server := grpc.NewServer()
 	apiv1.RegisterTurboDBEngineServer(server, engine.NewGRPCServer(eng))
+	apiv1.RegisterTurboDBAdminServer(server, engine.NewAdminServer(eng, version))
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -137,6 +147,39 @@ func run() error {
 		}()
 	}
 
+	var adminSrv *http.Server
+	if *adminListen != "" {
+		requireMTLS := *adminTLSCA != ""
+		handler := engine.NewAdminHTTPHandler(eng, engine.AdminHTTPConfig{
+			Metrics:              metrics.Handler(),
+			RequireMTLSForWrites: requireMTLS,
+		})
+		adminSrv = &http.Server{
+			Addr:              *adminListen,
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		if requireMTLS {
+			tlsCfg, terr := adminTLSConfig(*adminTLSCert, *adminTLSKey, *adminTLSCA)
+			if terr != nil {
+				return terr
+			}
+			adminSrv.TLSConfig = tlsCfg
+		}
+		go func() {
+			logger.Info("turbodb-engine: admin API serving", "address", *adminListen, "mtls", requireMTLS)
+			var serr error
+			if requireMTLS {
+				serr = adminSrv.ListenAndServeTLS("", "")
+			} else {
+				serr = adminSrv.ListenAndServe()
+			}
+			if serr != nil && !errors.Is(serr, http.ErrServerClosed) {
+				logger.Error("admin API server", "error", serr)
+			}
+		}()
+	}
+
 	go func() {
 		<-ctx.Done()
 		logger.Info("turbodb-engine: shutdown signal received")
@@ -147,6 +190,11 @@ func run() error {
 			shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
 			defer c()
 			_ = metricsSrv.Shutdown(shutdownCtx)
+		}
+		if adminSrv != nil {
+			shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+			defer c()
+			_ = adminSrv.Shutdown(shutdownCtx)
 		}
 		server.GracefulStop()
 	}()
@@ -160,4 +208,30 @@ func run() error {
 	}
 	logger.Info("turbodb-engine: stopped")
 	return nil
+}
+
+// adminTLSConfig builds a server TLS config that requires and verifies
+// client certificates against the given CA bundle.
+func adminTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, fmt.Errorf("--admin-tls-cert and --admin-tls-key are required with --admin-tls-ca")
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load admin TLS keypair: %w", err)
+	}
+	caPEM, err := os.ReadFile(caFile) // #nosec G304 -- operator-supplied CA path
+	if err != nil {
+		return nil, fmt.Errorf("read admin TLS CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("admin TLS CA %s contains no valid certificates", caFile)
+	}
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    pool,
+	}, nil
 }

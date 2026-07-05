@@ -28,7 +28,7 @@ PostgreSQL Extension       | postgres/             | C/Go     | Phase 5 (compile
 Format Support             | pkg/formats/          | Go       | Phase 4 Complete
 KV Cache Plugin            | python/               | Python   | Phase 4 (scaffold; GPU kernel pending)
 CDC & Replication          | cmd/turbodb-sync/     | Go       | Phase 6 (Tasks 7.1-7.4 done; Kafka mode optional)
-Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6 (Task 8.1 done; admin API pending)
+Control Plane CLI          | cmd/turbodb-ctl/      | Go       | Phase 6 (Tasks 8.1 + 8.2 done)
 ```
 
 ## Language Boundaries
@@ -126,7 +126,9 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 - `turbodb-ctl` is now a Cobra command tree: `collection create|list|describe|drop|flush` and `index build-stats` talk to a running engine over gRPC (`--engine`); `import|export|inspect|convert` keep operating on a data directory offline (`--data-dir`); `sync status` reads the LSN checkpoint and `sync reconcile [collection]` runs the Task 7.4 reconciler (`--repair` to fix). `collection drop` requires `--confirm`. Shell completions and help come from Cobra. The gRPC adapter shared by turbodb-sync and turbodb-ctl lives in `internal/enginerpc`.
 - Deferred pending engine support: `index compact` (no segment compaction API yet), `benchmark` (use `turbodb-bench`), and the `admin` group (`gpu-info`, `rotator-regenerate`, `codebook-upgrade` — the TurboDBAdmin gRPC service is defined in `api/v1/admin.proto` but not yet implemented in the engine; lands with Task 8.2).
 
-**Next:** Task 8.2 (admin HTTP API + TurboDBAdmin gRPC service), Task 7.5 optional Kafka transport, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
+- Task 8.2 — admin surface: the engine now serves the `TurboDBAdmin` gRPC service (Health with version/uptime, Ready, GPUInfo from the CUDA layer; RotatorRegenerate validates its confirmation phrase then returns Unimplemented — sealed segments hold only quantized codes, so re-encoding needs the raw source, i.e. drop + re-import/re-sync; CodebookUpgrade likewise until a v2 codebook exists) plus an HTTP/JSON admin API on `--admin-listen` (default :8080): `/healthz`, `/readyz`, `/metrics`, and `/api/v1/collections` CRUD with a `{success, data, error}` envelope. With `--admin-tls-{cert,key,ca}` the API serves mTLS (TLS 1.2+, `RequireAndVerifyClientCert`) and write endpoints reject requests without a verified client certificate. `turbodb-ctl admin health|gpu-info|rotator-regenerate|codebook-upgrade` complete the Task 8.1 command tree.
+
+**Next:** Task 7.5 optional Kafka transport, the 24h fault-injection soak (Phase 6 exit), and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above).
 
 ## Quickstart
 

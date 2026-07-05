@@ -31,6 +31,7 @@ func startTestEngine(t *testing.T) string {
 	}
 	srv := grpc.NewServer()
 	apiv1.RegisterTurboDBEngineServer(srv, engine.NewGRPCServer(eng))
+	apiv1.RegisterTurboDBAdminServer(srv, engine.NewAdminServer(eng, "test"))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.GracefulStop)
 	return lis.Addr().String()
@@ -191,5 +192,31 @@ func writeTestSafeTensors(t *testing.T, path string, rows, dim int) {
 	}
 	if err := os.WriteFile(path, out.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAdminCommands(t *testing.T) {
+	addr := startTestEngine(t)
+
+	out, err := execute(t, "admin", "health", "--engine", addr)
+	if err != nil {
+		t.Fatalf("health: %v (%s)", err, out)
+	}
+	if !strings.Contains(out, "healthy: true") || !strings.Contains(out, "version: test") {
+		t.Errorf("health output: %q", out)
+	}
+
+	out, err = execute(t, "admin", "gpu-info", "--engine", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no GPU devices") {
+		t.Errorf("gpu-info output: %q", out)
+	}
+
+	// Rotator regenerate refuses locally without the exact phrase.
+	if _, err := execute(t, "admin", "rotator-regenerate", "docs",
+		"--engine", addr, "--confirm", "yes"); err == nil {
+		t.Error("expected confirm-phrase error")
 	}
 }
