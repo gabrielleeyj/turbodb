@@ -48,3 +48,5 @@ __pycache__/
 /turbodb-ctl
 /turbodb-engine
 /turbodb-sync
+/turbodb-soak
+soak-work/
