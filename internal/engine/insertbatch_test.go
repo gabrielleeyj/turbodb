@@ -63,3 +63,45 @@ func TestEngineInsertBatch(t *testing.T) {
 		t.Errorf("empty batch: n=%d err=%v", n, err)
 	}
 }
+
+func TestEngineInsertBatchIsIdempotent(t *testing.T) {
+	t.Parallel()
+	e := newTestEngine(t)
+	ctx := context.Background()
+	if err := e.CreateCollection(ctx, defaultCollection("redeliver")); err != nil {
+		t.Fatal(err)
+	}
+
+	rng := rand.New(rand.NewPCG(9, 9))
+	entries := make([]index.VectorEntry, 10)
+	for i := range entries {
+		entries[i] = index.VectorEntry{ID: fmt.Sprintf("r%02d", i), Values: randVec(rng)}
+	}
+
+	// At-least-once CDC delivery replays batches after a crash: the second
+	// delivery must succeed and not duplicate anything.
+	for round := 0; round < 2; round++ {
+		if _, err := e.InsertBatch(ctx, "redeliver", entries); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+	}
+	ids, err := e.ListIDs("redeliver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 10 {
+		t.Errorf("ids after redelivery: got %d, want 10", len(ids))
+	}
+
+	// Redelivered deletes are equally idempotent.
+	if err := e.Delete(ctx, "redeliver", "r00"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Delete(ctx, "redeliver", "r00"); err != nil {
+		t.Errorf("second delete must be a no-op success: %v", err)
+	}
+	ids, _ = e.ListIDs("redeliver")
+	if len(ids) != 9 {
+		t.Errorf("ids after delete: got %d, want 9", len(ids))
+	}
+}

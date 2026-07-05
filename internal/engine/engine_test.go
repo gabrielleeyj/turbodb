@@ -179,11 +179,14 @@ func TestRecoveryReplaysWAL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.VectorCount != 25 {
-		t.Errorf("VectorCount = %d, want 25", stats.VectorCount)
+	// Growing-segment deletes are physical, so the deleted vector is gone
+	// from the count and no tombstone remains (tombstones only mask sealed
+	// copies).
+	if stats.VectorCount != 24 {
+		t.Errorf("VectorCount = %d, want 24", stats.VectorCount)
 	}
-	if stats.TombstoneCount != 1 {
-		t.Errorf("TombstoneCount = %d, want 1", stats.TombstoneCount)
+	if stats.TombstoneCount != 0 {
+		t.Errorf("TombstoneCount = %d, want 0", stats.TombstoneCount)
 	}
 }
 

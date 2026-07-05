@@ -1,10 +1,10 @@
-.PHONY: build test lint fmt vet clean proto proto-lint proto-breaking all cuda cuda-test cuda-clean
+.PHONY: build test lint fmt vet clean proto proto-lint proto-breaking all cuda cuda-test cuda-clean soak-pg soak-smoke soak
 
 # Default target
 all: build test lint
 
 # Build all Go binaries
-BINARIES := turbodb-engine turbodb-ctl turbodb-sync turbodb-bench
+BINARIES := turbodb-engine turbodb-ctl turbodb-sync turbodb-bench turbodb-soak
 BUILD_DIR := bin
 
 build:
@@ -117,6 +117,27 @@ test-cuda: cuda
 	DYLD_LIBRARY_PATH=$(CURDIR)/cuda/lib:$(DYLD_LIBRARY_PATH) \
 	go test -tags cuda -race -count=1 ./...
 	@echo "==> Done."
+
+# Start (or restart) the dedicated soak PostgreSQL container.
+soak-pg:
+	@docker rm -f turbodb-pg-soak 2>/dev/null || true
+	docker run -d --name turbodb-pg-soak -p 5434:5432 \
+	  -e POSTGRES_PASSWORD=turbodb pgvector/pgvector:pg17 -c wal_level=logical
+	@until docker exec turbodb-pg-soak pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+	@echo "==> turbodb-pg-soak ready on :5434"
+
+# Short soak to validate the harness (~10 minutes).
+soak-smoke: build soak-pg
+	rm -rf soak-work
+	$(BUILD_DIR)/turbodb-soak --duration 8m --fault-interval 60s \
+	  --workload-rate 50 --catchup-budget 90s --workdir soak-work
+
+# Phase 6 exit criterion: 24-hour fault-injection soak. Keep the machine
+# awake (e.g. `caffeinate -is make soak`).
+soak: build soak-pg
+	rm -rf soak-work
+	$(BUILD_DIR)/turbodb-soak --duration 24h --fault-interval 10m \
+	  --workload-rate 50 --workdir soak-work
 
 # Clean build artifacts
 clean:

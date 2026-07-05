@@ -127,6 +127,55 @@ func (g *GrowingSegment) Insert(entry VectorEntry) error {
 	return nil
 }
 
+// Upsert inserts the vector or replaces the stored copy when the ID already
+// exists. Growing segments hold raw vectors, so replacement is in place.
+func (g *GrowingSegment) Upsert(entry VectorEntry) error {
+	if len(entry.Values) != g.dim {
+		return fmt.Errorf("growing segment: expected dim %d, got %d", g.dim, len(entry.Values))
+	}
+	if entry.ID == "" {
+		return fmt.Errorf("growing segment: vector ID must not be empty")
+	}
+
+	values := make([]float32, len(entry.Values))
+	copy(values, entry.Values)
+	var meta map[string]string
+	if len(entry.Metadata) > 0 {
+		meta = make(map[string]string, len(entry.Metadata))
+		maps.Copy(meta, entry.Metadata)
+	}
+	stored := VectorEntry{ID: entry.ID, Values: values, Metadata: meta}
+
+	g.mu.Lock()
+	if idx, exists := g.idIndex[entry.ID]; exists {
+		g.entries[idx] = stored
+	} else {
+		g.idIndex[entry.ID] = len(g.entries)
+		g.entries = append(g.entries, stored)
+	}
+	g.mu.Unlock()
+	return nil
+}
+
+// Remove physically deletes a vector from the segment, reporting whether it
+// was present. The last entry is swapped into the vacated slot.
+func (g *GrowingSegment) Remove(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	idx, ok := g.idIndex[id]
+	if !ok {
+		return false
+	}
+	last := len(g.entries) - 1
+	if idx != last {
+		g.entries[idx] = g.entries[last]
+		g.idIndex[g.entries[idx].ID] = idx
+	}
+	g.entries = g.entries[:last]
+	delete(g.idIndex, id)
+	return true
+}
+
 // Contains reports whether a vector ID exists in this segment.
 func (g *GrowingSegment) Contains(id string) bool {
 	g.mu.RLock()

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -275,16 +276,18 @@ func (e *Engine) Insert(_ context.Context, collection string, entry index.Vector
 	if _, err := e.wal.Append(wal.OpInsert, payload); err != nil {
 		return fmt.Errorf("engine: wal append: %w", err)
 	}
-	if err := state.coll.Insert(entry); err != nil {
+	if err := state.coll.Upsert(entry); err != nil {
 		return err
 	}
 	e.metrics.Load().AddInserts(1)
 	return nil
 }
 
-// InsertBatch inserts several vectors with one WAL durability action for
-// the whole batch (see wal.AppendBatch). All entries are validated before
-// anything is written; a validation failure rejects the entire batch.
+// InsertBatch upserts several vectors with one WAL durability action for
+// the whole batch (see wal.AppendBatch). Existing IDs are replaced — the
+// idempotent semantics at-least-once CDC delivery requires. All entries are
+// validated before anything is written; a validation failure rejects the
+// entire batch.
 func (e *Engine) InsertBatch(_ context.Context, collection string, entries []index.VectorEntry) (int, error) {
 	if len(entries) == 0 {
 		return 0, nil
@@ -322,7 +325,7 @@ func (e *Engine) InsertBatch(_ context.Context, collection string, entries []ind
 		return 0, fmt.Errorf("engine: wal append batch: %w", err)
 	}
 	for i, entry := range entries {
-		if err := state.coll.Insert(entry); err != nil {
+		if err := state.coll.Upsert(entry); err != nil {
 			e.metrics.Load().AddInserts(i)
 			return i, fmt.Errorf("engine: insert batch entry %d: %w", i, err)
 		}
@@ -351,7 +354,16 @@ func (e *Engine) Delete(_ context.Context, collection, id string) error {
 	if _, err := e.wal.Append(wal.OpDelete, payload); err != nil {
 		return fmt.Errorf("engine: wal append: %w", err)
 	}
-	return state.coll.Delete(id)
+	if err := state.coll.Delete(id); err != nil {
+		// Deleting an id that is already gone is a success: at-least-once
+		// CDC delivery replays deletes, and a delete's outcome (id absent)
+		// is already satisfied.
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // Search returns the top-K most similar vectors to query along with a Plan

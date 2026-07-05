@@ -176,8 +176,47 @@ func (c *Collection) Insert(entry VectorEntry) error {
 		c.mu.Unlock()
 		return fmt.Errorf("collection insert: %w", err)
 	}
+	return c.maybeRotateLocked()
+}
 
-	// Check if we need to seal.
+// Upsert inserts the vector or replaces any existing copy with the same ID.
+// This is the idempotent write path required by at-least-once CDC delivery:
+// redelivered transactions and row updates must not fail.
+//
+// A copy resident in a sealed segment cannot be rewritten in place (sealed
+// segments hold immutable quantized codes), so it is masked with a tombstone
+// and the new copy lives in the growing segment. See sealSegment for how the
+// mask is resolved when that growing segment itself seals.
+func (c *Collection) Upsert(entry VectorEntry) error {
+	c.mu.Lock()
+
+	sealedHas := false
+	for _, s := range c.sealed {
+		if s.Contains(entry.ID) {
+			sealedHas = true
+			break
+		}
+	}
+	if sealedHas {
+		// Mask the stale sealed copy. Growing-segment reads ignore
+		// tombstones (deletes there are physical), so the new copy
+		// stays visible.
+		c.tombstones.Delete(entry.ID)
+	} else {
+		// Supersede any prior delete.
+		c.tombstones.Remove(entry.ID)
+	}
+
+	if err := c.growing.Upsert(entry); err != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("collection upsert: %w", err)
+	}
+	return c.maybeRotateLocked()
+}
+
+// maybeRotateLocked seals the growing segment once it reaches the threshold.
+// Caller holds c.mu; the lock is released before returning.
+func (c *Collection) maybeRotateLocked() error {
 	if c.growing.Count() >= c.sealThreshold {
 		old := c.growing
 		newSeg, err := c.newGrowingSegment()
@@ -213,22 +252,22 @@ func (c *Collection) Delete(id string) error {
 	}
 
 	c.mu.RLock()
-	found := c.growing.Contains(id)
-	if !found {
-		for _, s := range c.sealed {
-			if s.Contains(id) {
-				found = true
-				break
-			}
+	removed := c.growing.Remove(id)
+	sealedHas := false
+	for _, s := range c.sealed {
+		if s.Contains(id) {
+			sealedHas = true
+			break
 		}
 	}
 	c.mu.RUnlock()
 
-	if !found {
+	if sealedHas {
+		c.tombstones.Delete(id)
+	}
+	if !removed && !sealedHas {
 		return fmt.Errorf("collection delete: vector ID %q not found", id)
 	}
-
-	c.tombstones.Delete(id)
 	return nil
 }
 
@@ -257,9 +296,11 @@ func (c *Collection) Search(query []float32, topK int) ([]SearchResult, error) {
 	totalSegments := 1 + len(sealed)
 	ch := make(chan segResult, totalSegments)
 
-	// Search growing segment.
+	// Search growing segment. Growing deletes are physical, and a
+	// tombstone may exist solely to mask a stale sealed copy of an
+	// upserted id, so growing reads ignore the tombstone log.
 	go func() {
-		results, err := growing.Search(query, topK, c.tombstones)
+		results, err := growing.Search(query, topK, nil)
 		ch <- segResult{results, err}
 	}()
 
@@ -281,7 +322,7 @@ func (c *Collection) Search(query []float32, topK int) ([]SearchResult, error) {
 		allResults = append(allResults, sr.results...)
 	}
 
-	return mergeTopK(allResults, topK), nil
+	return mergeTopK(dedupByID(allResults), topK), nil
 }
 
 // Stats returns collection statistics.
@@ -315,12 +356,8 @@ func (c *Collection) Snapshot() ([]VectorEntry, error) {
 	defer c.mu.RUnlock()
 
 	var out []VectorEntry
-	for _, entry := range c.growing.Entries() {
-		if c.tombstones.IsDeleted(entry.ID) {
-			continue
-		}
-		out = append(out, entry)
-	}
+	// Growing deletes are physical; every growing entry is live.
+	out = append(out, c.growing.Entries()...)
 	for _, s := range c.sealed {
 		entries, err := s.Reconstruct(c.tombstones)
 		if err != nil {
@@ -340,9 +377,7 @@ func (c *Collection) IDs() []string {
 
 	seen := make(map[string]struct{})
 	for _, entry := range c.growing.Entries() {
-		if !c.tombstones.IsDeleted(entry.ID) {
-			seen[entry.ID] = struct{}{}
-		}
+		seen[entry.ID] = struct{}{}
 	}
 	for _, s := range c.sealed {
 		for _, id := range s.IDs() {
@@ -466,6 +501,14 @@ func (c *Collection) sealSegment(g *GrowingSegment) error {
 		c.pinnedSegSize[sealed.ID()] = estBytes
 		c.pinnedBytes += estBytes
 	}
+	// The sealing segment's copies are newer than any sealed copy of the
+	// same id, so lift the masks that protected reads while these ids
+	// lived in the growing segment. A stale copy in an older sealed
+	// segment becomes reachable again, which search tolerates via
+	// per-id dedup; compaction will remove it permanently.
+	for _, entry := range entries {
+		c.tombstones.Remove(entry.ID)
+	}
 	c.mu.Unlock()
 
 	c.logger.Info("segment sealed",
@@ -542,4 +585,22 @@ func heapifyDown(h *minHeap, i int) {
 		(*h)[i], (*h)[smallest] = (*h)[smallest], (*h)[i]
 		i = smallest
 	}
+}
+
+// dedupByID keeps the best-scoring result per id. An upserted id can
+// transiently have copies in more than one segment until compaction.
+func dedupByID(results []SearchResult) []SearchResult {
+	best := make(map[string]int, len(results))
+	out := results[:0]
+	for _, r := range results {
+		if i, ok := best[r.ID]; ok {
+			if r.Score > out[i].Score {
+				out[i] = r
+			}
+			continue
+		}
+		best[r.ID] = len(out)
+		out = append(out, r)
+	}
+	return out
 }

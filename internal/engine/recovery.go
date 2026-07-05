@@ -28,14 +28,13 @@ func (e *Engine) replayWAL() error {
 					"collection", p.Collection, "lsn", rec.LSN)
 				return nil
 			}
-			err = state.coll.Insert(index.VectorEntry{
+			err = state.coll.Upsert(index.VectorEntry{
 				ID:       p.ID,
 				Values:   p.Values,
 				Metadata: p.Metadata,
 			})
 			if err != nil {
-				// Duplicate inserts can occur if recovery overlaps with prior partial state.
-				e.logger.Warn("wal replay: insert error",
+				e.logger.Warn("wal replay: upsert error",
 					"collection", p.Collection, "id", p.ID, "lsn", rec.LSN, "error", err)
 				return nil
 			}
