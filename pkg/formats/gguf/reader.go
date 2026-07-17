@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 )
@@ -52,11 +53,25 @@ type File struct {
 	alignment int64
 }
 
-// cursor is a sequential little-endian reader over an io.ReaderAt.
+// cursor is a sequential little-endian reader over an io.ReaderAt. size, when
+// positive, is the total input length and bounds count-driven allocations.
 type cursor struct {
-	src io.ReaderAt
-	off int64
-	err error
+	src  io.ReaderAt
+	off  int64
+	size int64
+	err  error
+}
+
+// remaining returns how many input bytes are left, or MaxInt64 when the size
+// is unknown.
+func (c *cursor) remaining() int64 {
+	if c.size <= 0 {
+		return math.MaxInt64
+	}
+	if c.off >= c.size {
+		return 0
+	}
+	return c.size - c.off
 }
 
 func (c *cursor) read(n int64) []byte {
@@ -121,9 +136,18 @@ func Open(path string) (*File, error) {
 	return f, nil
 }
 
+// Minimum encoded sizes used to sanity-check header counts against the file
+// size before any count-driven allocation: a KV entry is at least a key
+// length (8), a value type (4), and one value byte; a tensor info is at
+// least a name length (8), ndims (4), a type (4), and an offset (8).
+const (
+	minKVEntryBytes    = 13
+	minTensorInfoBytes = 24
+)
+
 // NewReader parses GGUF structure from src (which must expose size bytes).
 func NewReader(src io.ReaderAt, size int64) (*File, error) {
-	c := &cursor{src: src}
+	c := &cursor{src: src, size: size}
 	if magic := c.u32(); magic != Magic {
 		return nil, fmt.Errorf("gguf: bad magic 0x%08x (want 0x%08x)", magic, Magic)
 	}
@@ -134,6 +158,12 @@ func NewReader(src io.ReaderAt, size int64) (*File, error) {
 	nKV := c.u64()
 	if c.err != nil {
 		return nil, fmt.Errorf("gguf: read header: %w", c.err)
+	}
+	if rem := c.remaining(); nKV > uint64(rem)/minKVEntryBytes {
+		return nil, fmt.Errorf("gguf: metadata count %d implausible for %d remaining bytes", nKV, rem)
+	}
+	if rem := c.remaining(); nTensors > uint64(rem)/minTensorInfoBytes {
+		return nil, fmt.Errorf("gguf: tensor count %d implausible for %d remaining bytes", nTensors, rem)
 	}
 
 	f := &File{
@@ -250,6 +280,13 @@ func readValueOfType(c *cursor, t metadataValueType) Value {
 		elemType := metadataValueType(c.u32())
 		n := c.u64()
 		if c.err != nil {
+			return Value{Type: t}
+		}
+		// Every element consumes at least one input byte, so a count
+		// beyond the remaining bytes is corrupt; reject it before the
+		// count drives any allocation.
+		if n > uint64(c.remaining()) {
+			c.err = fmt.Errorf("gguf: array element count %d exceeds %d remaining bytes", n, c.remaining())
 			return Value{Type: t}
 		}
 		arr := make([]Value, 0, n)

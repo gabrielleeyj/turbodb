@@ -36,6 +36,9 @@ func (t TensorInfo) validate(name string) error {
 	if begin < 0 || end < begin {
 		return fmt.Errorf("tensor %q: invalid data_offsets [%d, %d]", name, begin, end)
 	}
+	if count != 0 && int64(elemSize) > 0 && count > maxInt64/int64(elemSize) {
+		return fmt.Errorf("tensor %q: byte size overflow for shape %v dtype %s", name, t.Shape, t.Dtype)
+	}
 	if want := count * int64(elemSize); t.nbytes() != want {
 		return fmt.Errorf("tensor %q: data range %d bytes does not match shape %v dtype %s (%d bytes)",
 			name, t.nbytes(), t.Shape, t.Dtype, want)
