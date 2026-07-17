@@ -1,0 +1,45 @@
+# TurboDB engine daemon.
+# Install: cp turbodb-engine.service /etc/systemd/system/
+#          cp engine.env.example /etc/turbodb/engine.env
+#          useradd --system --home /var/lib/turbodb --shell /usr/sbin/nologin turbodb
+#          systemctl daemon-reload && systemctl enable --now turbodb-engine
+[Unit]
+Description=TurboDB vector database engine
+Documentation=https://github.com/gabrielleeyj/turbodb
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=turbodb
+Group=turbodb
+EnvironmentFile=-/etc/turbodb/engine.env
+# Admin API and metrics bind loopback: the admin API has no authentication
+# unless mTLS (--admin-tls-*) is configured. gRPC has no TLS; restrict :7080
+# to trusted networks via firewall. Extra flags (e.g. mTLS certs) go in
+# TURBODB_ENGINE_EXTRA_FLAGS in engine.env.
+ExecStart=/usr/local/bin/turbodb-engine \
+    --listen :7080 \
+    --admin-listen 127.0.0.1:8080 \
+    --metrics-listen 127.0.0.1:9090 \
+    --data-dir /var/lib/turbodb \
+    --log-format json \
+    --wal-fsync group \
+    $TURBODB_ENGINE_EXTRA_FLAGS
+Restart=always
+RestartSec=2
+StateDirectory=turbodb
+LimitNOFILE=65536
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/turbodb
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
