@@ -1,0 +1,9 @@
+# Table mappings for turbodb-sync. Copy to sync.yaml and adjust.
+# Matches the example schema created by initdb/01-example.sql.
+tables:
+  - postgres: public.docs
+    engine: docs
+    columns:
+      id: doc_id
+      embedding: embedding
+    filter: "deleted_at IS NULL"

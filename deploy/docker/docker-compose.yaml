@@ -1,0 +1,78 @@
+# TurboDB production-testing stack: PostgreSQL (logical replication source),
+# turbodb-engine, and turbodb-sync.
+#
+# Usage:
+#   cp .env.example .env            # then set POSTGRES_PASSWORD
+#   cp sync.yaml.example sync.yaml  # adjust table mappings
+#   docker compose up -d --build
+#
+# gRPC (7080) and the admin API (8080) are published on loopback only:
+# neither carries authentication by default. Enable mTLS on the admin API
+# (--admin-tls-*) before exposing it beyond the host. See README.md.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    command: ["-c", "wal_level=logical"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  turbodb-engine:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: engine
+    ports:
+      - "127.0.0.1:7080:7080"   # gRPC (no TLS: keep private)
+      - "127.0.0.1:8080:8080"   # admin HTTP/JSON API
+      - "127.0.0.1:9090:9090"   # Prometheus metrics
+    volumes:
+      - enginedata:/var/lib/turbodb
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  turbodb-sync:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      target: sync
+    command:
+      - run
+      - --config=/etc/turbodb/sync.yaml
+      - --slot=turbodb_sync
+      - --publication=turbodb_pub
+      - --engine=turbodb-engine:7080
+      - --checkpoint=/var/lib/turbodb-sync/sync.ckpt
+    environment:
+      # DSN via env only; never on the command line (visible in `ps`).
+      TURBODB_PG_DSN: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    volumes:
+      - syncstate:/var/lib/turbodb-sync
+      - ./sync.yaml:/etc/turbodb/sync.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      turbodb-engine:
+        condition: service_healthy
+    # Sync exits by design when the engine becomes unreachable (circuit
+    # breaker); unconditional restart is the supervision contract.
+    restart: always
+
+volumes:
+  pgdata:
+  enginedata:
+  syncstate:
