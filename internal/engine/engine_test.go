@@ -323,6 +323,13 @@ func TestValidation(t *testing.T) {
 		{"bad dim", CollectionConfig{Name: "x", Dim: 0, BitWidth: 4, Metric: MetricInnerProduct, Variant: VariantMSE}},
 		{"bad bitwidth", CollectionConfig{Name: "x", Dim: 128, BitWidth: 9, Metric: MetricInnerProduct, Variant: VariantMSE}},
 		{"missing variant", CollectionConfig{Name: "x", Dim: 128, BitWidth: 4, Metric: MetricInnerProduct}},
+		// The name becomes a file path under data-dir; traversal and
+		// separator characters must be rejected.
+		{"path traversal name", CollectionConfig{Name: "../../evil", Dim: testDim, BitWidth: testBitWidth, Metric: MetricInnerProduct, Variant: VariantMSE}},
+		{"slash in name", CollectionConfig{Name: "a/b", Dim: testDim, BitWidth: testBitWidth, Metric: MetricInnerProduct, Variant: VariantMSE}},
+		{"backslash in name", CollectionConfig{Name: `a\b`, Dim: testDim, BitWidth: testBitWidth, Metric: MetricInnerProduct, Variant: VariantMSE}},
+		{"dot name", CollectionConfig{Name: "..", Dim: testDim, BitWidth: testBitWidth, Metric: MetricInnerProduct, Variant: VariantMSE}},
+		{"null byte in name", CollectionConfig{Name: "a\x00b", Dim: testDim, BitWidth: testBitWidth, Metric: MetricInnerProduct, Variant: VariantMSE}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

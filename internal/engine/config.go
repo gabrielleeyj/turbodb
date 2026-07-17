@@ -51,6 +51,9 @@ func (c CollectionConfig) Validate() error {
 	if len(c.Name) > 128 {
 		return fmt.Errorf("collection: name exceeds 128 chars")
 	}
+	if !isSafeCollectionName(c.Name) {
+		return fmt.Errorf("collection: name %q must contain only letters, digits, underscores, or hyphens and not start with a hyphen", c.Name)
+	}
 	if c.Dim < 1 || c.Dim > 8192 {
 		return fmt.Errorf("collection: dim must be 1..8192, got %d", c.Dim)
 	}
@@ -64,6 +67,25 @@ func (c CollectionConfig) Validate() error {
 		return fmt.Errorf("collection: variant %q not supported (only %q)", c.Variant, VariantMSE)
 	}
 	return nil
+}
+
+// isSafeCollectionName reports whether name is safe to embed in file paths
+// under the data dir (configPath joins it directly): letters, digits,
+// underscores, and hyphens only, not starting with a hyphen. This rules out
+// path separators, "..", and control characters.
+func isSafeCollectionName(name string) bool {
+	for i, r := range name {
+		switch {
+		case r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'):
+		case r == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return name != ""
 }
 
 // Config configures the Engine.
