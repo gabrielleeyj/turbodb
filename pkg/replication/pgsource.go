@@ -41,10 +41,36 @@ func (c PgSourceConfig) validate() error {
 	if c.Slot == "" {
 		return fmt.Errorf("replication: pg source: slot name is required")
 	}
+	if !isSafeIdentifier(c.Slot) {
+		return fmt.Errorf("replication: pg source: invalid slot name %q (letters, digits, and underscores only)", c.Slot)
+	}
 	if c.Publication == "" {
 		return fmt.Errorf("replication: pg source: publication name is required")
 	}
+	if !isSafeIdentifier(c.Publication) {
+		return fmt.Errorf("replication: pg source: invalid publication name %q (letters, digits, and underscores only)", c.Publication)
+	}
 	return nil
+}
+
+// isSafeIdentifier reports whether s is a plain PostgreSQL identifier
+// (letter or underscore, then letters, digits, or underscores). The slot and
+// publication names are spliced into replication commands and the pgoutput
+// publication_names plugin argument, so anything needing quoting is rejected
+// outright rather than escaped.
+func isSafeIdentifier(s string) bool {
+	for i, r := range s {
+		switch {
+		case r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+		case r >= '0' && r <= '9':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return s != ""
 }
 
 // PgSource streams change events from a PostgreSQL logical replication slot
