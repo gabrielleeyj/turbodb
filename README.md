@@ -128,7 +128,30 @@ go run ./cmd/turbodb-bench/ -vectors 1000  -queries 30  -crash-recover
 
 - Task 8.2 — admin surface: the engine now serves the `TurboDBAdmin` gRPC service (Health with version/uptime, Ready, GPUInfo from the CUDA layer; RotatorRegenerate validates its confirmation phrase then returns Unimplemented — sealed segments hold only quantized codes, so re-encoding needs the raw source, i.e. drop + re-import/re-sync; CodebookUpgrade likewise until a v2 codebook exists) plus an HTTP/JSON admin API on `--admin-listen` (default :8080): `/healthz`, `/readyz`, `/metrics`, and `/api/v1/collections` CRUD with a `{success, data, error}` envelope. With `--admin-tls-{cert,key,ca}` the API serves mTLS (TLS 1.2+, `RequireAndVerifyClientCert`) and write endpoints reject requests without a verified client certificate. `turbodb-ctl admin health|gpu-info|rotator-regenerate|codebook-upgrade` complete the Task 8.1 command tree.
 
-- Soak harness (`cmd/turbodb-soak`) for the Phase 6 exit criterion: runs the hybrid stack (PostgreSQL + turbodb-sync + turbodb-engine) under a steady workload, injects engine crashes (SIGKILL + WAL recovery), sync crashes (checkpoint resume), engine stalls (SIGSTOP partition proxy), and PostgreSQL restarts, supervising both binaries the way systemd would. After every fault it quiesces the workload, writes a sentinel row, waits for sync to catch up past it, and requires a zero-discrepancy reconcile. `make soak-smoke` (~10 min) validates the harness; `make soak` is the 24h run (keep the machine awake: `caffeinate -is make soak`). **The 24h soak passed (2026-07-18): 142 faults injected (42 engine crashes, 34 stalls, 36 PostgreSQL restarts, 30 sync crashes), 143/143 verifications, 0 violations, max catch-up 5.37s against the 2m budget — Phase 6 exit criterion met.**
+- Soak harness (`cmd/turbodb-soak`) for the Phase 6 exit criterion: runs the hybrid stack (PostgreSQL + turbodb-sync + turbodb-engine) under a steady workload, injects engine crashes (SIGKILL + WAL recovery), sync crashes (checkpoint resume), engine stalls (SIGSTOP partition proxy), and PostgreSQL restarts, supervising both binaries the way systemd would. After every fault it quiesces the workload, writes a sentinel row, waits for sync to catch up past it, and requires a zero-discrepancy reconcile. `make soak-smoke` (~10 min) validates the harness; `make soak` is the 24h run (keep the machine awake: `caffeinate -is make soak`).
+
+### 24h soak results (2026-07-18) — PASSED, Phase 6 exit criterion met
+
+Run: started 2026-07-17 23:36 +08, duration 24h 3m, workload 50 ops/s
+(~4.3M ops total), fault interval 10m, catch-up budget 2m. M3 Pro, CPU-only
+build, PostgreSQL 17 (pgvector) via Docker. Verdict: exit 0, `SOAK PASSED`.
+
+| Metric | Result |
+|--------|--------|
+| Faults injected | 142 total |
+| — engine crashes (SIGKILL + WAL recovery) | 42 |
+| — engine stalls (SIGSTOP partition) | 34 |
+| — PostgreSQL restarts | 36 |
+| — sync crashes (checkpoint resume) | 30 |
+| Verification cycles (zero-discrepancy reconcile) | 143/143 passed |
+| Violations | **0** |
+| Supervised process restarts | 119 |
+| Max catch-up after fault | **5.37s** (budget 2m) |
+| Last catch-up | 4.32s |
+
+Every fault cycle ended with sync catching up past a sentinel row and a
+reconcile finding zero discrepancies between PostgreSQL and the engine.
+The raw scoreboard is written to `soak-work/scoreboard.json` (gitignored).
 - The soak immediately caught a real correctness bug: engine inserts rejected duplicate ids, but at-least-once CDC delivery requires idempotent writes — a row UPDATE (or a redelivered transaction) poisoned the batch and crash-looped sync. The engine's write path is now upsert-semantic: growing-segment copies are replaced in place, deletes there are physical (tombstones only mask sealed copies), a sealed-resident upsert masks the stale copy and lands in the growing segment (mask lifted at seal; search dedups per id until compaction), redelivered deletes are no-op successes, and WAL replay upserts.
 
 **Next:** Task 7.5 optional Kafka transport, and wiring CUDA dispatch into the sealed-segment search path (closes the Phase 3 p99 SLO and the GPU-blocked acceptance tests above). Deployment templates for production testing live in `deploy/docker` (compose stack) and `deploy/systemd`.
